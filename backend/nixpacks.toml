@@ -1,0 +1,5 @@
+[phases.setup]
+cmds = [
+    "pip install -r requirements.txt",
+    "python init_knowledge.py"
+]

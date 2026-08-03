@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Database
+*.db
+*.db-journal
+
+# ChromaDB
+chroma_data/
+
+# Node
+node_modules/
+dist/
+
+# Env (keep .env.example only)
+.env
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+~$*
