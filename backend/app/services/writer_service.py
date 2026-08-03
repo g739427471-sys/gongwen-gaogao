@@ -1,12 +1,12 @@
 """
 写作业务逻辑服务。
-编排框架生成、内容生成、润色的完整流程。
+编排框架生成、内容生成、润色、文种识别的完整流程。
 """
 import json
 import re
 from typing import AsyncGenerator, Optional
 
-from .llm_service import stream_generate, generate_sync
+from .llm_service import stream_generate, generate_full
 from .prompts import (
     FRAMEWORK_SYSTEM_PROMPT, CONTENT_SYSTEM_PROMPT, REFINE_SYSTEM_PROMPT,
     build_framework_user_message, build_content_user_message, build_refine_user_message,
@@ -16,17 +16,15 @@ from ..models import Document
 from ..database import SessionLocal
 
 
-def generate_framework(
+async def generate_framework(
     topic: str,
     doc_type: str,
     keywords: list = None,
 ) -> dict:
-    """生成公文框架"""
-    # 检索相关知识
+    """生成公文框架（使用流式调用，避免超时）"""
     knowledge_results = search_knowledge(query=topic, top_k=3)
     knowledge_context = _format_knowledge_context(knowledge_results)
 
-    # 构建消息
     user_message = build_framework_user_message(
         topic=topic,
         doc_type=doc_type,
@@ -34,18 +32,36 @@ def generate_framework(
         knowledge_context=knowledge_context,
     )
 
-    # 调用 Claude
-    response_text = generate_sync(
+    response_text = await generate_full(
         system_prompt=FRAMEWORK_SYSTEM_PROMPT,
         user_message=user_message,
     )
 
-    # 解析 JSON
     result = _parse_json_response(response_text)
     return {
         "title_suggestion": result.get("title_suggestion", f"关于{topic}的{doc_type}"),
         "framework": result.get("framework", []),
         "references": _extract_references(knowledge_results),
+    }
+
+
+async def detect_doc_type(topic: str) -> dict:
+    """根据主题自动识别文种"""
+    prompt = f"""请根据以下写作主题，判断最合适的公文文种。
+
+主题：{topic}
+
+可选文种包括：通知、报告、请示、批复、意见、决定、决议、通报、通告、公告、公报、函、纪要、议案、命令、工作总结、实施方案、工作计划、汇报材料、讲话稿、调研报告、述职报告、对照检查材料、心得体会
+
+请以 JSON 格式返回：
+```json
+{{"doc_type": "文种名称", "reason": "判断理由（一句话）"}}
+```"""
+    text = await generate_full(system_prompt="你是公文写作专家，请准确判断文种。", user_message=prompt)
+    result = _parse_json_response(text)
+    return {
+        "doc_type": result.get("doc_type", "通知"),
+        "reason": result.get("reason", ""),
     }
 
 
@@ -55,16 +71,15 @@ async def generate_content_stream(
     keywords: list = None,
     framework: list = None,
     custom_instructions: str = None,
+    reference_material: str = "",
 ) -> AsyncGenerator[dict, None]:
-    """
-    流式生成公文内容。
-    返回事件字典：{"type": "outline/framework/content_delta/complete/error", "data": ...}
-    """
-    # 检索相关知识
+    """流式生成公文内容。"""
     knowledge_results = search_knowledge(query=topic, top_k=5)
     knowledge_context = _format_knowledge_context(knowledge_results)
 
-    # 构建消息
+    if reference_material:
+        knowledge_context = f"## 用户上传的参考材料\n{reference_material}\n\n## 知识库参考\n{knowledge_context}"
+
     user_message = build_content_user_message(
         topic=topic,
         doc_type=doc_type,
@@ -76,7 +91,6 @@ async def generate_content_stream(
 
     yield {"type": "status", "data": "正在生成..."}
 
-    # 流式调用
     full_text = ""
     try:
         async for chunk in stream_generate(
@@ -89,7 +103,6 @@ async def generate_content_stream(
         yield {"type": "error", "data": str(e)}
         return
 
-    # 解析完整响应
     result = _parse_json_response(full_text)
 
     yield {
@@ -103,19 +116,19 @@ async def generate_content_stream(
     }
 
 
-def refine_document(
+async def refine_document(
     content: str,
     doc_type: str = "通知",
     instructions: str = "",
 ) -> dict:
-    """润色文稿"""
+    """润色文稿（流式调用）"""
     user_message = build_refine_user_message(
         content=content,
         doc_type=doc_type,
         instructions=instructions,
     )
 
-    response_text = generate_sync(
+    response_text = await generate_full(
         system_prompt=REFINE_SYSTEM_PROMPT,
         user_message=user_message,
     )
@@ -163,7 +176,7 @@ def _format_knowledge_context(results: list) -> str:
         return ""
     parts = []
     for i, r in enumerate(results[:5]):
-        parts.append(f"[{i+1}] 来源：{r.get('source', r.get('title', '未知'))}\n{r.get('content', '')[:300]}")
+        parts.append(f"[{i+1}] 来源：{r.get('source', r.get('title', '未知'))}\n{r.get('content', '')}")
     return "\n\n".join(parts)
 
 
@@ -179,7 +192,6 @@ def _extract_references(results: list) -> list:
 
 def _parse_json_response(text: str) -> dict:
     """从 Claude 响应中解析 JSON"""
-    # 尝试提取 ```json ... ``` 块
     json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
     if json_match:
         try:
@@ -187,13 +199,11 @@ def _parse_json_response(text: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # 尝试直接解析
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # 尝试找到 JSON 对象
     brace_match = re.search(r'\{.*\}', text, re.DOTALL)
     if brace_match:
         try:
@@ -201,5 +211,4 @@ def _parse_json_response(text: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # 返回原始文本作为 content
     return {"content": text, "framework": [], "title": "", "references": []}

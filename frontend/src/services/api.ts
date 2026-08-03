@@ -106,6 +106,7 @@ export function generateContentStream(
   docType: string,
   keywords: string[],
   framework: { level: number; title: string; key_points: string[] }[],
+  referenceMaterial: string | undefined,
   onDelta: (text: string) => void,
   onComplete: (result: GenerationComplete) => void,
   onError: (error: string) => void,
@@ -119,7 +120,7 @@ export function generateContentStream(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ topic, doc_type: docType, keywords, framework }),
+    body: JSON.stringify({ topic, doc_type: docType, keywords, framework, custom_instructions: referenceMaterial || '' }),
     signal: controller.signal,
   })
     .then(async (response) => {
@@ -172,6 +173,36 @@ export function generateContentStream(
   return controller
 }
 
+// ========== 文种识别 ==========
+
+export async function detectDocType(topic: string): Promise<{ doc_type: string; reason: string }> {
+  const formData = new FormData()
+  formData.append('topic', topic)
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}/writing/detect-doc-type`, {
+    method: 'POST', headers, body: formData,
+  })
+  if (!res.ok) throw new Error('识别失败')
+  return res.json()
+}
+
+// ========== 文件上传 ==========
+
+export async function uploadReference(file: File): Promise<{ filename: string; text: string; length: number }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}/writing/upload-reference`, {
+    method: 'POST', headers, body: formData,
+  })
+  if (!res.ok) throw new Error('上传失败')
+  return res.json()
+}
+
 // ========== 知识库 API ==========
 
 export async function searchKnowledge(
@@ -186,6 +217,10 @@ export async function searchKnowledge(
 
 export async function getKnowledgeCategories() {
   return request<{ categories: Record<string, number>; total_chunks: number }>('/knowledge/categories')
+}
+
+export async function getNewsFeed() {
+  return request<{ news: { id: string; title: string; source: string; url: string; date: string; snippet: string }[] }>('/knowledge/news')
 }
 
 // ========== 文稿管理 API ==========
