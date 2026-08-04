@@ -8,7 +8,8 @@ from typing import AsyncGenerator, Optional
 
 from .llm_service import stream_generate, generate_full
 from .prompts import (
-    FRAMEWORK_SYSTEM_PROMPT, CONTENT_SYSTEM_PROMPT, REFINE_SYSTEM_PROMPT,
+    FRAMEWORK_SYSTEM_PROMPT, CONTENT_SYSTEM_PROMPT, NATURAL_SYSTEM_PROMPT,
+    REFINE_SYSTEM_PROMPT,
     build_framework_user_message, build_content_user_message, build_refine_user_message,
 )
 from .knowledge_service import search_knowledge
@@ -91,10 +92,16 @@ async def generate_content_stream(
 
     yield {"type": "status", "data": "正在生成..."}
 
+    # 选择风格对应的系统提示词
+    flavor = "standard"
+    if custom_instructions and "natural" in custom_instructions.lower():
+        flavor = "natural"
+    system_prompt = NATURAL_SYSTEM_PROMPT if flavor == "natural" else CONTENT_SYSTEM_PROMPT
+
     full_text = ""
     try:
         async for chunk in stream_generate(
-            system_prompt=CONTENT_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_message=user_message,
         ):
             full_text += chunk

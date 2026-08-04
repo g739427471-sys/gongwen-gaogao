@@ -18,7 +18,7 @@ export default function ReferencePanel() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<KnowledgeChunk[]>([])
   const [searching, setSearching] = useState(false)
-  const [activeTab, setActiveTab] = useState<'search' | 'news'>('search')
+  const [activeTab, setActiveTab] = useState<'search' | 'craft' | 'news'>('search')
   const [news, setNews] = useState<NewsItem[]>([])
   const [newsLoading, setNewsLoading] = useState(false)
   const [newsPage, setNewsPage] = useState(1)
@@ -97,12 +97,20 @@ export default function ReferencePanel() {
           <BookOpen size={15} /> 知识检索
         </button>
         <button
+          onClick={() => setActiveTab('craft')}
+          className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${
+            activeTab === 'craft' ? 'text-[#c8102e] border-b-2 border-[#c8102e]' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <BookOpen size={15} /> 心法
+        </button>
+        <button
           onClick={() => setActiveTab('news')}
           className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${
             activeTab === 'news' ? 'text-[#c8102e] border-b-2 border-[#c8102e]' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          <Newspaper size={15} /> 近期简讯
+          <Newspaper size={15} /> 简讯
         </button>
       </div>
 
@@ -153,6 +161,34 @@ export default function ReferencePanel() {
               </div>
             )}
           </>
+        )}
+
+        {/* Craft Tab */}
+        {activeTab === 'craft' && (
+          <div className="space-y-3">
+            <div onClick={() => { setQuery('写作心法：常见文种思考框架'); setActiveTab('search'); setTimeout(() => document.querySelector('input')?.focus(), 100) }}
+              className="bg-amber-50 border border-amber-200 rounded-lg p-4 cursor-pointer hover:border-amber-300 transition">
+              <h4 className="font-medium text-amber-900 mb-2">常见文种思考框架</h4>
+              <p className="text-xs text-amber-700">通知、请示、报告、总结、讲话稿、调研报告——每种文种都有独特的思考框架。点击查看 →</p>
+            </div>
+            <div onClick={() => { setQuery('写作心法：高频场景金句库'); setActiveTab('search'); setTimeout(() => document.querySelector('input')?.focus(), 100) }}
+              className="bg-green-50 border border-green-200 rounded-lg p-4 cursor-pointer hover:border-green-300 transition">
+              <h4 className="font-medium text-green-900 mb-2">高频场景金句库</h4>
+              <p className="text-xs text-green-700">按开头、转折、强调、结尾分类的规范表述，标注适用语境。点击查看 →</p>
+            </div>
+            <div onClick={() => { setQuery('写作心法：常见错误案例库'); setActiveTab('search'); setTimeout(() => document.querySelector('input')?.focus(), 100) }}
+              className="bg-red-50 border border-red-200 rounded-lg p-4 cursor-pointer hover:border-red-300 transition">
+              <h4 className="font-medium text-red-900 mb-2">常见错误案例库</h4>
+              <p className="text-xs text-red-700">标点误用、用词不当、逻辑谬误——常见公文写作错误及修改建议。点击查看 →</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-900 mb-2">老秘书经验谈</h4>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                好的公文不是写出来的，是改出来的。写完后大声读一遍，不顺口的地方就是要改的地方。
+                数字要核实两遍，人名职衔要核对三遍。政治表述必须原原本本，一个字都不能自己发挥。
+              </p>
+            </div>
+          </div>
         )}
 
         {/* News Feed */}
