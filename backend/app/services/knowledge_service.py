@@ -1,8 +1,8 @@
 """
-知识库服务。
-负责 ChromaDB 向量检索和 SQLite 关键词检索。
+知识库服务 — 带缓存的语义+关键词混合检索。
 """
 import os
+import time
 from typing import List, Optional
 
 try:
@@ -20,8 +20,35 @@ except ImportError:
 
 from ..config import settings
 
+# ========== 检索缓存（大幅提速） ==========
 
-# 全局变量（懒加载）
+_cache: dict = {}          # key -> (results, timestamp)
+CACHE_TTL = 300            # 5分钟缓存
+
+
+def _cache_key(query: str, category: str = None, top_k: int = 5) -> str:
+    return f"{query}|{category or ''}|{top_k}"
+
+
+def _cache_get(key: str) -> Optional[List[dict]]:
+    if key in _cache:
+        results, ts = _cache[key]
+        if time.time() - ts < CACHE_TTL:
+            return results
+        del _cache[key]
+    return None
+
+
+def _cache_set(key: str, results: List[dict]):
+    _cache[key] = (results, time.time())
+    # 限制缓存大小
+    if len(_cache) > 200:
+        oldest = min(_cache, key=lambda k: _cache[k][1])
+        del _cache[oldest]
+
+
+# ========== ChromaDB 客户端（懒加载） ==========
+
 _chroma_client = None
 _embedding_model = None
 _collection = None
@@ -61,12 +88,14 @@ def _get_collection():
 def search_knowledge(
     query: str,
     category: Optional[str] = None,
-    top_k: int = 5,
+    top_k: int = 10,
 ) -> List[dict]:
-    """
-    搜索知识库，返回相关段落列表。
-    先尝试 ChromaDB 语义搜索，失败则回退到 SQLite 关键词搜索。
-    """
+    """搜索知识库 — 先查缓存，再查ChromaDB/SQLite"""
+    ck = _cache_key(query, category, top_k)
+    cached = _cache_get(ck)
+    if cached:
+        return cached
+
     results = []
 
     # 尝试 ChromaDB 语义搜索
@@ -76,9 +105,7 @@ def search_knowledge(
     if collection and model:
         try:
             query_embedding = model.encode(query).tolist()
-            where_filter = None
-            if category:
-                where_filter = {"category": category}
+            where_filter = {"category": category} if category else None
 
             chroma_results = collection.query(
                 query_embeddings=[query_embedding],
@@ -89,9 +116,9 @@ def search_knowledge(
 
             if chroma_results and chroma_results["ids"] and chroma_results["ids"][0]:
                 ids = chroma_results["ids"][0]
-                documents = chroma_results["documents"][0] if chroma_results["documents"] else []
-                metadatas = chroma_results["metadatas"][0] if chroma_results["metadatas"] else []
-                distances = chroma_results["distances"][0] if chroma_results["distances"] else []
+                documents = chroma_results["documents"][0]
+                metadatas = chroma_results["metadatas"][0]
+                distances = chroma_results["distances"][0]
 
                 for i, doc_id in enumerate(ids):
                     meta = metadatas[i] if i < len(metadatas) else {}
@@ -102,19 +129,22 @@ def search_knowledge(
                         "title": meta.get("title", ""),
                         "content": documents[i] if i < len(documents) else "",
                         "source": meta.get("source", ""),
-                        "score": round(1.0 - distance, 4) if distance else 0.0,
+                        "score": round(1.0 - distance, 4),
                     })
+
+                _cache_set(ck, results)
                 return results
         except Exception:
-            # ChromaDB 搜索失败，回退到 SQLite
             pass
 
-    # 回退：SQLite 关键词搜索
-    return _sqlite_keyword_search(query, category, top_k)
+    # 回退 SQLite
+    results = _sqlite_keyword_search(query, category, top_k)
+    _cache_set(ck, results)
+    return results
 
 
-def _sqlite_keyword_search(query: str, category: Optional[str] = None, top_k: int = 5) -> List[dict]:
-    """SQLite 关键词搜索（回退方案）"""
+def _sqlite_keyword_search(query: str, category: Optional[str] = None, top_k: int = 10) -> List[dict]:
+    """SQLite 关键词搜索 — 增强中文分词"""
     from ..database import SessionLocal
     from ..models import KnowledgeChunk
 
@@ -124,28 +154,26 @@ def _sqlite_keyword_search(query: str, category: Optional[str] = None, top_k: in
         if category:
             q = q.filter(KnowledgeChunk.category == category)
 
-        # 简单关键词匹配
         chunks = q.all()
         scored = []
         for c in chunks:
             score = 0
-            content_lower = c.content.lower()
-            title_lower = c.title.lower()
-            for term in query.split():
-                term_lower = term.lower()
-                if term_lower in title_lower:
-                    score += 3
-                if term_lower in content_lower:
-                    score += 1
+            cl = c.content
+            tl = c.title
+
+            # 单字匹配（适合中文）
+            for ch in query:
+                if ch in tl: score += 3
+                if ch in cl: score += 1
+            # 完整词匹配
+            if query in tl: score += 10
+            if query in cl: score += 5
 
             if score > 0:
                 scored.append({
-                    "id": c.id,
-                    "category": c.category,
-                    "title": c.title,
-                    "content": c.content[:500],
-                    "source": c.source,
-                    "score": float(score),
+                    "id": c.id, "category": c.category,
+                    "title": c.title, "content": c.content,  # 完整内容
+                    "source": c.source, "score": float(score),
                 })
 
         scored.sort(key=lambda x: x["score"], reverse=True)
@@ -155,7 +183,6 @@ def _sqlite_keyword_search(query: str, category: Optional[str] = None, top_k: in
 
 
 def get_categories_stats() -> dict:
-    """获取知识库分类统计"""
     from ..database import SessionLocal
     from ..models import KnowledgeChunk
     from sqlalchemy import func
@@ -166,19 +193,13 @@ def get_categories_stats() -> dict:
             KnowledgeChunk.category,
             func.count(KnowledgeChunk.id)
         ).group_by(KnowledgeChunk.category).all()
-
-        categories = {}
-        for cat, count in results:
-            categories[cat] = count
-
-        total = sum(categories.values())
-        return {"categories": categories, "total_chunks": total}
+        cats = {cat: count for cat, count in results}
+        return {"categories": cats, "total_chunks": sum(cats.values())}
     finally:
         db.close()
 
 
 def init_chromadb():
-    """初始化 ChromaDB（预热客户端和模型）"""
     try:
         _get_chroma_client()
         _get_embedding_model()
