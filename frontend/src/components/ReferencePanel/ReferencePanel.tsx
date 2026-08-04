@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { searchKnowledge, getNewsFeed } from '../../services/api'
+import { searchKnowledge, getNewsFeed, refreshNews } from '../../services/api'
 import type { KnowledgeChunk } from '../../types'
-import { Search, BookOpen, Newspaper, ExternalLink, Clock } from 'lucide-react'
+import { Search, BookOpen, Newspaper, ExternalLink, Clock, RefreshCw } from 'lucide-react'
 
 const CATEGORY_LABELS: Record<string, string> = {
   policy: '政策法规',
@@ -21,14 +21,49 @@ export default function ReferencePanel() {
   const [activeTab, setActiveTab] = useState<'search' | 'news'>('search')
   const [news, setNews] = useState<NewsItem[]>([])
   const [newsLoading, setNewsLoading] = useState(false)
+  const [newsPage, setNewsPage] = useState(1)
+  const [newsTotalPages, setNewsTotalPages] = useState(1)
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const loadNews = (page: number) => {
+    setNewsLoading(true)
+    setNewsPage(page)
+    getNewsFeed(page, 10)
+      .then((res) => {
+        setNews(res.news)
+        setNewsTotalPages(res.total_pages)
+        setLastUpdate(res.last_update || null)
+      })
+      .catch(() => {})
+      .finally(() => setNewsLoading(false))
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const result = await refreshNews()
+      if (result.status === 'ok') {
+        loadNews(1)
+      } else if (result.status === 'already_updating') {
+        setTimeout(() => loadNews(1), 3000)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const formatUpdateTime = (iso: string | null) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
 
   useEffect(() => {
     if (activeTab === 'news' && news.length === 0) {
-      setNewsLoading(true)
-      getNewsFeed()
-        .then((res) => setNews(res.news))
-        .catch(() => {})
-        .finally(() => setNewsLoading(false))
+      loadNews(1)
     }
   }, [activeTab])
 
@@ -77,7 +112,7 @@ export default function ReferencePanel() {
           <>
             <div className="flex gap-2 mb-4">
               <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown}
-                placeholder="搜索政策、讲话、规范表述..."
+                placeholder="AI智能搜索权威资料..."
                 className="flex-1 px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30" />
               <button onClick={handleSearch} disabled={searching}
                 className="px-3 py-1.5 bg-[#c8102e] text-white rounded text-sm hover:bg-[#a00d25] transition disabled:opacity-50">
@@ -123,6 +158,21 @@ export default function ReferencePanel() {
         {/* News Feed */}
         {activeTab === 'news' && (
           <>
+            {/* Refresh bar */}
+            <div className="flex items-center justify-between mb-3 text-xs text-gray-400">
+              <span>
+                {lastUpdate ? `更新于 ${formatUpdateTime(lastUpdate)}` : ''}
+              </span>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-1 px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+                {refreshing ? '更新中...' : '刷新'}
+              </button>
+            </div>
+
             {newsLoading && <div className="text-center text-gray-400 text-sm py-8">加载中...</div>}
             <div className="space-y-3">
               {news.map((item) => (
@@ -155,6 +205,39 @@ export default function ReferencePanel() {
               <div className="text-center py-12">
                 <Newspaper size={36} className="mx-auto text-gray-300 mb-3" />
                 <p className="text-sm text-gray-400">暂无简讯</p>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {newsTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-6 pb-2">
+                <button
+                  onClick={() => loadNews(newsPage - 1)}
+                  disabled={newsPage <= 1}
+                  className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  上一页
+                </button>
+                {Array.from({ length: newsTotalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => loadNews(p)}
+                    className={`w-8 h-8 text-xs rounded-full ${
+                      p === newsPage
+                        ? 'bg-[#c8102e] text-white font-bold'
+                        : 'border border-gray-300 hover:bg-gray-100'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  onClick={() => loadNews(newsPage + 1)}
+                  disabled={newsPage >= newsTotalPages}
+                  className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  下一页
+                </button>
               </div>
             )}
           </>

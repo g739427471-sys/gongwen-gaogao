@@ -66,3 +66,16 @@ class KnowledgeChunk(Base):
     content = Column(Text, nullable=False)
     source = Column(String(500), default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class NewsItem(Base):
+    """近期简讯"""
+    __tablename__ = "news_items"
+
+    id = Column(String(36), primary_key=True, default=_default_uuid)
+    title = Column(String(500), nullable=False)
+    source = Column(String(50), nullable=False)
+    url = Column(String(500), default="")
+    date = Column(String(20), nullable=False)
+    snippet = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)

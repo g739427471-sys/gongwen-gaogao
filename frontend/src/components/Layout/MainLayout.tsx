@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import WriterPanel from '../WriterPanel/WriterPanel'
+import HistoryPanel from '../WriterPanel/HistoryPanel'
 import ReferencePanel from '../ReferencePanel/ReferencePanel'
-import { PenLine, ChevronLeft, ChevronRight, User, LogOut } from 'lucide-react'
+import { PenLine, ChevronLeft, ChevronRight, User, LogOut, Clock } from 'lucide-react'
 
 interface Props {
   username: string
@@ -10,6 +11,7 @@ interface Props {
 
 export default function MainLayout({ username, onLogout }: Props) {
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [activeTab, setActiveTab] = useState<'write' | 'history'>('write')
 
   return (
     <div className="h-screen flex flex-col bg-[#f5f5f0]">
@@ -24,7 +26,24 @@ export default function MainLayout({ username, onLogout }: Props) {
             <p className="text-xs text-white/70">智能公文写作辅助工具</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('write')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition ${
+              activeTab === 'write' ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white'
+            }`}
+          >
+            <PenLine size={14} /> 写作
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition ${
+              activeTab === 'history' ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white'
+            }`}
+          >
+            <Clock size={14} /> 历史
+          </button>
+          <span className="mx-2 text-white/30">|</span>
           <div className="flex items-center gap-1.5 text-white/80 text-sm">
             <User size={14} />
             <span>{username}</span>
@@ -33,21 +52,20 @@ export default function MainLayout({ username, onLogout }: Props) {
             onClick={onLogout}
             className="flex items-center gap-1 px-3 py-1.5 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded transition"
           >
-            <LogOut size={14} />
-            退出
+            <LogOut size={14} /> 退出
           </button>
         </div>
       </header>
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel - Writer */}
-        <div
-          className={`transition-all duration-300 ${
-            rightPanelOpen ? 'w-[60%]' : 'flex-1'
-          }`}
-        >
-          <WriterPanel />
+        {/* Left Panel */}
+        <div className={`transition-all duration-300 ${rightPanelOpen ? 'w-[60%]' : 'flex-1'}`}>
+          {activeTab === 'write' ? (
+            <WriterPanel />
+          ) : (
+            <HistoryPanel onBack={() => setActiveTab('write')} />
+          )}
         </div>
 
         {/* Divider */}
@@ -61,7 +79,7 @@ export default function MainLayout({ username, onLogout }: Props) {
           </button>
         </div>
 
-        {/* Right Panel - Reference */}
+        {/* Right Panel */}
         {rightPanelOpen && (
           <div className="w-[40%] border-l border-gray-200 bg-white">
             <ReferencePanel />

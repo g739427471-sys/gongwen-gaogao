@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24小时
 
+    # DeepSeek API（知识检索，可选，不配置则回退到本地搜索）
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+
     # 前端地址（用于 CORS）
     frontend_url: str = "http://localhost:5173"
 

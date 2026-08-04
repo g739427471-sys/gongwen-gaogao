@@ -219,8 +219,17 @@ export async function getKnowledgeCategories() {
   return request<{ categories: Record<string, number>; total_chunks: number }>('/knowledge/categories')
 }
 
-export async function getNewsFeed() {
-  return request<{ news: { id: string; title: string; source: string; url: string; date: string; snippet: string }[] }>('/knowledge/news')
+export async function getNewsFeed(page: number = 1, pageSize: number = 10) {
+  return request<{
+    news: { id: string; title: string; source: string; url: string; date: string; snippet: string }[]
+    total: number; page: number; page_size: number; total_pages: number; last_update: string | null
+  }>(`/knowledge/news?page=${page}&page_size=${pageSize}`)
+}
+
+export async function refreshNews() {
+  return request<{ status: string; count?: number; updated_at?: string; detail?: string }>(
+    '/knowledge/news/refresh', { method: 'POST' },
+  )
 }
 
 // ========== 文稿管理 API ==========
