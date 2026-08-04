@@ -219,6 +219,26 @@ export async function getKnowledgeCategories() {
   return request<{ categories: Record<string, number>; total_chunks: number }>('/knowledge/categories')
 }
 
+export async function auditContent(content: string): Promise<{
+  total_issues: number; issues: { type: string; severity: string; message: string; suggestion?: string; location?: string }[]
+  summary: string; categories: Record<string, number>
+}> {
+  const token = getToken(); const form = new FormData(); form.append('content', content)
+  const headers: Record<string, string> = {}; if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}/writing/audit`, { method: 'POST', headers, body: form })
+  if (!res.ok) throw new Error('审校失败')
+  return res.json()
+}
+
+export async function exportWord(content: string, title: string): Promise<void> {
+  const token = getToken(); const form = new FormData(); form.append('content', content); form.append('title', title)
+  const headers: Record<string, string> = {}; if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}/writing/export-word`, { method: 'POST', headers, body: form })
+  if (!res.ok) throw new Error('导出失败')
+  const blob = await res.blob(); const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url; a.download = `${title}.docx`; a.click(); URL.revokeObjectURL(url)
+}
+
 export async function getNewsFeed(page: number = 1, pageSize: number = 10) {
   return request<{
     news: { id: string; title: string; source: string; url: string; date: string; snippet: string }[]

@@ -4,6 +4,7 @@ import FrameworkView from './FrameworkView'
 import ContentView from './ContentView'
 import {
   generateFramework, generateContentStream, detectDocType, uploadReference,
+  auditContent, exportWord,
 } from '../../services/api'
 import type { OutlineItem, GenerationComplete } from '../../types'
 import {
@@ -15,6 +16,7 @@ interface Props {
   quickTopic?: string
   quickDocType?: string
   onConsumed?: () => void
+  onAutoSearch?: (query: string) => void
 }
 
 // Progress steps
@@ -33,7 +35,7 @@ const FLAVOR_OPTIONS = [
   { value: 'natural', label: '自然', desc: '更贴近日常写作风格，AI味更轻' },
 ]
 
-export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Props) {
+export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAutoSearch }: Props) {
   const [topic, setTopic] = useState('')
   const [docType, setDocType] = useState('通知')
   const [keywords, setKeywords] = useState('')
@@ -53,6 +55,10 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
   const [dragOver, setDragOver] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editedContent, setEditedContent] = useState('')
+  const [showGuide, setShowGuide] = useState(false)
+  const [auditing, setAuditing] = useState(false)
+  const [auditResult, setAuditResult] = useState<any>(null)
+  const [exporting, setExporting] = useState(false)
 
   const abortRef = useRef<AbortController | null>(null)
   const detectTimer = useRef<any>(null)
@@ -103,11 +109,35 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
     for (let i = 0; i < fs.length; i++) await processFile(fs[i])
   }
 
+  // Trigger auto-search on right panel
+  const triggerAutoSearch = (q: string) => { onAutoSearch?.(q) }
+
+  // Audit
+  const handleAudit = async () => {
+    const text = editMode ? editedContent : content
+    if (!text) return
+    setAuditing(true); setAuditResult(null)
+    try { setAuditResult(await auditContent(text)) }
+    catch { setAuditResult({ total_issues: 0, issues: [], summary: '审校失败', categories: {} }) }
+    finally { setAuditing(false) }
+  }
+
+  // Export Word
+  const handleExport = async () => {
+    const text = editMode ? editedContent : content
+    if (!text) return
+    setExporting(true)
+    try { await exportWord(text, titleSuggestion || topic || '公文') }
+    catch { alert('导出失败') }
+    finally { setExporting(false) }
+  }
+
   // Generate
   const handleGenerate = useCallback(async () => {
     if (!topic.trim()) { setError('请输入写作主题。您也可以点击上方快捷指令快速开始。'); return }
-    setError(''); setContent(''); setEditedContent(''); setEditMode(false)
+    setError(''); setContent(''); setEditedContent(''); setEditMode(false); setAuditResult(null)
     setIsGenerating(true); setGenerateStep('idle')
+    triggerAutoSearch(topic.trim())
 
     // Animate progress
     setProgressStep(0)
@@ -287,6 +317,22 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
 
       {/* Output Area */}
       <div className="flex-1 overflow-y-auto p-4">
+        {/* Usage guide */}
+        {!isGenerating && !content && (
+          <div className="mb-4 border border-amber-200 rounded-lg bg-amber-50 overflow-hidden">
+            <button onClick={() => setShowGuide(!showGuide)}
+              className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-amber-800">
+              💡 使用指引 {showGuide ? '▲' : '▼'}
+            </button>
+            {showGuide && (
+              <div className="px-4 pb-3 text-xs text-amber-700 space-y-1 leading-relaxed">
+                <p><strong>1.</strong> 输入主题或点击上方「快捷指令」→ <strong>2.</strong> 调节AI风格 → <strong>3.</strong> 可选上传参考文件 → <strong>4.</strong> 点击「生成公文」→ <strong>5.</strong> 编辑修改后导出</p>
+                <p className="text-amber-500">提示：右侧面板会自动检索与您主题相关的权威资料。</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Progress indicator */}
         {isGenerating && progressStep >= 0 && (
           <div className="mb-6">
@@ -347,6 +393,14 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
                   <button onClick={handleGenerate}
                     className="flex items-center gap-1 px-2.5 py-1 text-xs text-[#c8102e] hover:bg-red-50 rounded transition">
                     <RotateCcw size={12} /> 重新生成
+                  </button>
+                  <button onClick={handleExport} disabled={exporting}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50">
+                    <Download size={12} /> {exporting ? '导出中' : '导出Word'}
+                  </button>
+                  <button onClick={handleAudit} disabled={auditing}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition disabled:opacity-50">
+                    <Search size={12} /> {auditing ? '审校中' : '审校'}
                   </button>
                 </div>
               )}
