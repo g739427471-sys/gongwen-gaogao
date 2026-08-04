@@ -86,18 +86,27 @@ async def refresh_news() -> dict:
         today_str = today.strftime('%Y-%m-%d')
         month_str = today.strftime('%Y年%m月')
 
+        # 官网首页URL映射
+        SITE_URLS = {
+            "人民日报": "https://paper.people.com.cn/rmrb/",
+            "求是网": "https://www.qstheory.cn/",
+            "共产党员网": "https://www.12371.cn/",
+            "学习强国": "https://www.xuexi.cn/",
+        }
+
         prompt = f"""请以JSON数组格式生成10条{today_str}及之前一周内的权威时政简讯。
 
-每条格式：{{"title":"标题","source":"人民日报|求是网|共产党员网|学习强国","url":"","date":"YYYY-MM-DD","snippet":"50字以内的内容概要"}}
+每条格式：{{"title":"标题","source":"人民日报|求是网|共产党员网|学习强国","date":"YYYY-MM-DD","snippet":"80字以内的内容概要"}}
 
 硬性要求：
 1. 所有date必须 ≤ {today_str}（绝对不能超过今天！）
-2. 来源必须均匀分布在人民日报、求是网、共产党员网、学习强国四个平台
-3. 内容必须符合{month_str}的重大时政热点
-4. 只输出JSON数组，不要其他文字"""
+2. 来源均匀分布在四个平台
+3. 内容符合{month_str}重大时政热点
+4. snippet要像真实新闻导语，具体、有信息量
+5. 只输出JSON数组，不要其他文字"""
 
         text = await generate_full(
-            system_prompt=f"你是新华社资深时政编辑。今天是{today_str}。你只输出{today_str}及之前的真实简讯。只输出JSON。",
+            system_prompt=f"你是新华社资深时政编辑。今天是{today_str}。只输出JSON数组。",
             user_message=prompt,
             max_tokens=3000,
             temperature=0.2,
@@ -110,12 +119,19 @@ async def refresh_news() -> dict:
 
         items = json.loads(json_match.group(0))
 
-        # 过滤未来日期
+        # 过滤+修正
         valid_items = []
         for item in items:
             item_date = item.get("date", "")
-            if item_date <= today_str:
-                valid_items.append(item)
+            if item_date > today_str:
+                continue  # 跳过未来日期
+
+            # 强制修正URL：用官网首页替代不可靠的详情链接
+            source = item.get("source", "人民日报")
+            item["url"] = SITE_URLS.get(source, "https://paper.people.com.cn/rmrb/")
+
+            valid_items.append(item)
+
         items = valid_items
         if not items:
             return {"status": "error", "detail": "所有生成的条目日期都超过今天，已过滤"}
