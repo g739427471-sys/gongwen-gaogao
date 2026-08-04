@@ -12,6 +12,7 @@ from .api.writing import router as writing_router
 from .api.knowledge import router as knowledge_router
 from .api.documents import router as documents_router
 from .api.auth import router as auth_router
+from .api.materials import router as materials_router
 
 
 @asynccontextmanager
@@ -52,6 +53,7 @@ app.include_router(auth_router)
 app.include_router(writing_router)
 app.include_router(knowledge_router)
 app.include_router(documents_router)
+app.include_router(materials_router)
 
 
 @app.get("/")

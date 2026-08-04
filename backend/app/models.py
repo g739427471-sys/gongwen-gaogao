@@ -79,3 +79,42 @@ class NewsItem(Base):
     date = Column(String(20), nullable=False)
     snippet = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ModelEssay(Base):
+    """范文库"""
+    __tablename__ = "model_essays"
+
+    id = Column(String(36), primary_key=True, default=_default_uuid)
+    title = Column(String(500), nullable=False)
+    doc_type = Column(String(50), nullable=False, index=True)
+    theme = Column(String(100), nullable=False, index=True)  # 党建/经济/民生/生态等
+    content = Column(Text, nullable=False)
+    framework = Column(Text, default="")
+    source = Column(String(500), default="")
+    usage_note = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class GoldenPhrase(Base):
+    """金句库"""
+    __tablename__ = "golden_phrases"
+
+    id = Column(String(36), primary_key=True, default=_default_uuid)
+    content = Column(Text, nullable=False)
+    scene = Column(String(50), nullable=False, index=True)  # 开头/结尾/转折/强调/号召
+    doc_type = Column(String(50), nullable=False)
+    context = Column(Text, default="")
+    source = Column(String(500), default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TitleTemplate(Base):
+    """标题模板库"""
+    __tablename__ = "title_templates"
+
+    id = Column(String(36), primary_key=True, default=_default_uuid)
+    template = Column(String(500), nullable=False)
+    theme = Column(String(100), nullable=False, index=True)
+    doc_type = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

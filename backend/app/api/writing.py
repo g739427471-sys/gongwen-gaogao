@@ -155,3 +155,99 @@ async def api_upload_reference(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文件处理失败：{str(e)}")
+
+
+# ========== 审校与导出 ==========
+
+from ..services.audit_service import audit_document
+from fastapi.responses import Response
+
+
+@router.post("/audit")
+async def api_audit(content: str = Form(...), user_id: str = Depends(get_current_user_id)):
+    """审校文稿——错别字/格式/敏感词/逻辑 四项检查"""
+    try:
+        result = await audit_document(content)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"审校失败：{str(e)}")
+
+
+@router.post("/export-word")
+async def api_export_word(content: str = Form(...), title: str = Form("公文"), user_id: str = Depends(get_current_user_id)):
+    """导出为Word文档（GB/T 9704-2012标准格式）"""
+    try:
+        from docx import Document as DocxDocument
+        from docx.shared import Pt, Cm, Inches, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml.ns import qn
+        import io
+
+        doc = DocxDocument()
+
+        # A4页面设置
+        for section in doc.sections:
+            section.page_width = Cm(21.0)
+            section.page_height = Cm(29.7)
+            section.top_margin = Cm(3.7)
+            section.bottom_margin = Cm(3.5)
+            section.left_margin = Cm(2.8)
+            section.right_margin = Cm(2.6)
+
+        # 标题 —— 二号方正小标宋（回退用黑体）
+        title_para = doc.add_paragraph()
+        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_run = title_para.add_run(title)
+        title_run.font.size = Pt(22)
+        title_run.font.bold = True
+        title_run.font.name = '黑体'
+        title_run._element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
+
+        # 正文 —— 三号仿宋
+        paragraphs = content.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+        for para_text in paragraphs:
+            para_text = para_text.strip()
+            if not para_text:
+                continue
+            p = doc.add_paragraph()
+
+            # 判断是否为标题行
+            is_heading = False
+            for prefix in ['一、', '二、', '三、', '四、', '五、', '六、', '七、', '八、', '九、', '十、',
+                          '（一）', '（二）', '（三）', '（四）', '（五）',
+                          '1.', '2.', '3.', '4.', '5.']:
+                if para_text.startswith(prefix):
+                    is_heading = True
+                    break
+
+            if para_text.startswith('#'):
+                is_heading = True
+                para_text = para_text.lstrip('#').strip()
+
+            run = p.add_run(para_text)
+            run.font.size = Pt(16)
+            run.font.name = '仿宋'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
+
+            if is_heading:
+                run.font.bold = True
+                run.font.name = '黑体'
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
+
+            # 首行缩进2字符
+            p.paragraph_format.first_line_indent = Pt(32)
+            p.paragraph_format.line_spacing = Pt(28)
+
+        # 保存到内存
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+
+        filename = f"{title}.docx"
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出失败：{str(e)}")
