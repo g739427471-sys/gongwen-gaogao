@@ -1,15 +1,14 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, DragEvent } from 'react'
 import DocTypeSelector from './DocTypeSelector'
 import FrameworkView from './FrameworkView'
 import ContentView from './ContentView'
-import LoadingSpinner from '../common/LoadingSpinner'
 import {
   generateFramework, generateContentStream, detectDocType, uploadReference,
 } from '../../services/api'
 import type { OutlineItem, GenerationComplete } from '../../types'
 import {
-  Sparkles, Copy, Check, Upload, X, FileText, Sliders, BookOpen,
-  Search, PenTool, ChevronDown, ChevronUp,
+  Sparkles, Copy, Check, Upload, X, FileText, Sliders, Search, BookOpen, PenTool,
+  ChevronDown, ChevronUp, RotateCcw, Download, Edit3, Eye
 } from 'lucide-react'
 
 interface Props {
@@ -18,19 +17,20 @@ interface Props {
   onConsumed?: () => void
 }
 
-// Generation progress steps
+// Progress steps
 const PROGRESS_STEPS = [
-  { key: 'searching', label: '正在检索权威资料...', icon: Search },
-  { key: 'framework', label: '正在构思文章框架...', icon: BookOpen },
-  { key: 'content', label: '正在组织撰写语言...', icon: PenTool },
+  { key: 'understanding', label: '正在理解写作主题...', icon: Search },
+  { key: 'researching', label: '正在查阅相关政策文献...', icon: BookOpen },
+  { key: 'framework', label: '正在构思文章框架...', icon: PenTool },
+  { key: 'writing', label: '正在撰写正文...', icon: Edit3 },
   { key: 'done', label: '生成完成', icon: Check },
 ]
 
-// AI Flavor presets
+// AI Flavor
 const FLAVOR_OPTIONS = [
-  { value: 'official', label: '官方', desc: '庄重严肃，用语标准' },
-  { value: 'standard', label: '标准', desc: '规范得体，表述准确' },
-  { value: 'natural', label: '自然', desc: '避免套路，像人写的' },
+  { value: 'official', label: '官方', desc: '最规范的公文表述，适合正式公文' },
+  { value: 'standard', label: '标准', desc: '平衡规范与流畅度，日常使用推荐' },
+  { value: 'natural', label: '自然', desc: '更贴近日常写作风格，AI味更轻' },
 ]
 
 export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Props) {
@@ -46,20 +46,25 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [detectReason, setDetectReason] = useState('')
-  const [uploadedFile, setUploadedFile] = useState<{ name: string; text: string } | null>(null)
+  const [files, setFiles] = useState<{ name: string; text: string }[]>([])
   const [uploading, setUploading] = useState(false)
   const [flavor, setFlavor] = useState('standard')
   const [showOptions, setShowOptions] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editedContent, setEditedContent] = useState('')
 
   const abortRef = useRef<AbortController | null>(null)
-  const contentRef = useRef('')
   const detectTimer = useRef<any>(null)
 
-  // Consume quick commands
+  // Consume quick commands → fill input
   useEffect(() => {
-    if (quickTopic) { setTopic(quickTopic); onConsumed?.() }
-    if (quickDocType) setDocType(quickDocType)
-  }, [quickTopic, quickDocType])
+    if (quickTopic) {
+      setTopic(quickTopic)
+      if (quickDocType) setDocType(quickDocType)
+      onConsumed?.()
+    }
+  }, [quickTopic])
 
   // Auto-detect doc type
   useEffect(() => {
@@ -67,80 +72,101 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
     if (topic.trim().length < 5) { setDetectReason(''); return }
     detectTimer.current = setTimeout(async () => {
       try {
-        setGenerateStep('detecting')
         const result = await detectDocType(topic.trim())
-        setDocType(result.doc_type); setDetectReason(result.reason)
-        setGenerateStep('idle')
-      } catch { setGenerateStep('idle') }
+        if (!quickDocType) setDocType(result.doc_type)
+        setDetectReason(result.reason)
+      } catch { /* silent */ }
     }, 1500)
     return () => { if (detectTimer.current) clearTimeout(detectTimer.current) }
   }, [topic])
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return
-    setUploading(true)
-    try { const result = await uploadReference(file); setUploadedFile({ name: result.filename, text: result.text }) }
-    catch (err: any) { setError(err.message || '上传失败') }
-    finally { setUploading(false) }
+  // File upload
+  const processFile = async (file: File) => {
+    if (files.length >= 5) { setError('最多上传5份参考材料'); return }
+    setUploading(true); setError('')
+    try {
+      const result = await uploadReference(file)
+      setFiles(prev => [...prev, { name: result.filename, text: result.text }])
+    } catch (err: any) {
+      setError(err.message || '上传失败')
+    } finally { setUploading(false) }
   }
 
-  const handleGenerate = useCallback(async () => {
-    if (!topic.trim()) { setError('请输入写作主题，或点击上方快捷指令快速开始'); return }
-    setError(''); setContent(''); contentRef.current = ''
-    setIsGenerating(true); setGenerateStep('framework')
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fs = e.target.files; if (!fs) return
+    for (let i = 0; i < fs.length; i++) await processFile(fs[i])
+  }
 
-    // Start progress animation
+  const handleDrop = async (e: DragEvent) => {
+    e.preventDefault(); setDragOver(false)
+    const fs = e.dataTransfer.files; if (!fs) return
+    for (let i = 0; i < fs.length; i++) await processFile(fs[i])
+  }
+
+  // Generate
+  const handleGenerate = useCallback(async () => {
+    if (!topic.trim()) { setError('请输入写作主题。您也可以点击上方快捷指令快速开始。'); return }
+    setError(''); setContent(''); setEditedContent(''); setEditMode(false)
+    setIsGenerating(true); setGenerateStep('idle')
+
+    // Animate progress
     setProgressStep(0)
-    const progressTimer = setInterval(() => {
-      setProgressStep(p => Math.min(p + 1, 2))
-    }, 2000)
+    const advance = () => setProgressStep(p => {
+      if (p >= 3) return 3
+      return p + 1
+    })
+    const t1 = setTimeout(() => advance(), 1500)
+    const t2 = setTimeout(() => advance(), 3500)
 
     const kwList = keywords.split(/[,，、\s]+/).filter(Boolean)
     try {
       const fwResult = await generateFramework(topic.trim(), docType, kwList)
+      clearTimeout(t1); clearTimeout(t2); setProgressStep(2)
       setFramework(fwResult.framework); setTitleSuggestion(fwResult.title_suggestion)
-      setGenerateStep('content'); setProgressStep(2)
+      setGenerateStep('content')
+      const t3 = setTimeout(() => advance(), 1000)
 
-      const instructions = `[AI风格: ${flavor}]` + (uploadedFile?.text ? `\n参考材料: ${uploadedFile.text}` : '')
+      const refText = files.map(f => f.text).join('\n---\n')
+      const instructions = `[AI风格: ${flavor}]` + (refText ? `\n参考材料:\n${refText}` : '')
       abortRef.current = generateContentStream(
         topic.trim(), docType, kwList, fwResult.framework,
         instructions,
-        (text) => { contentRef.current += text; setContent(contentRef.current) },
+        (text) => setContent(prev => prev + text),
         (result: GenerationComplete) => {
-          clearInterval(progressTimer); setProgressStep(3)
+          clearTimeout(t3); setProgressStep(4)
           setContent(result.content); setFramework(result.framework || fwResult.framework)
           setTitleSuggestion(result.title || fwResult.title_suggestion)
           setIsGenerating(false); setGenerateStep('done')
-          setTimeout(() => setProgressStep(-1), 2000)
+          setTimeout(() => setProgressStep(-1), 3000)
         },
-        (errMsg) => { clearInterval(progressTimer); setProgressStep(-1)
-          setError(errMsg); setIsGenerating(false); setGenerateStep('idle') },
+        (errMsg) => {
+          clearTimeout(t3); setProgressStep(-1)
+          setError(errMsg || '生成失败。请检查网络连接后重试，或缩短主题后重新生成。')
+          setIsGenerating(false); setGenerateStep('idle')
+        },
       )
     } catch (err: any) {
-      clearInterval(progressTimer); setProgressStep(-1)
-      setError(err.message || '生成失败，请稍后重试'); setIsGenerating(false); setGenerateStep('idle')
+      setProgressStep(-1)
+      setError(err.message || '生成失败。请检查网络连接和API配置后重试。')
+      setIsGenerating(false); setGenerateStep('idle')
     }
-  }, [topic, docType, keywords, uploadedFile, flavor])
+  }, [topic, docType, keywords, files, flavor])
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Quick Commands already in MainLayout */}
-
       {/* Input Area */}
       <div className="p-4 border-b border-gray-200 bg-white">
         {/* Flavor bar */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 text-xs">
-            <Sliders size={12} className="text-gray-400" />
-            <span className="text-gray-500">AI风格：</span>
+          <div className="flex items-center gap-2">
+            <Sliders size={13} className="text-gray-400" />
+            <span className="text-xs text-gray-500">AI风格：</span>
             <div className="flex gap-1">
               {FLAVOR_OPTIONS.map(opt => (
                 <button key={opt.value}
                   onClick={() => setFlavor(opt.value)}
                   className={`px-2.5 py-1 rounded-full text-xs transition ${
-                    flavor === opt.value
-                      ? 'bg-[#c8102e] text-white'
-                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    flavor === opt.value ? 'bg-[#c8102e] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}
                   title={opt.desc}
                 >
@@ -148,6 +174,9 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
                 </button>
               ))}
             </div>
+            <span className="text-[10px] text-gray-400 ml-1 hidden sm:inline">
+              {FLAVOR_OPTIONS.find(o => o.value === flavor)?.desc}
+            </span>
           </div>
           <button onClick={() => setShowOptions(!showOptions)}
             className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
@@ -155,14 +184,16 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
           </button>
         </div>
 
+        {/* Topic input */}
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
-              placeholder="输入写作主题，例如：2026年上半年党建工作总结"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 focus:border-[#c8102e]"
+              placeholder="请输入写作主题，例如：关于2026年上半年党建工作情况的总结报告。您也可以指定文种（通知/报告/请示/讲话稿等）和字数要求。"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 focus:border-[#c8102e] placeholder-gray-400"
               disabled={isGenerating} />
+            <p className="text-[10px] text-gray-400 mt-1">支持上传参考文档（Word/PDF/TXT，最多5份），生成更贴合您需求的文稿。</p>
             {detectReason && (
-              <p className="text-xs text-green-600 mt-1">📋 已识别：{docType} — {detectReason}</p>
+              <p className="text-xs text-green-600 mt-0.5">📋 {docType} — {detectReason}</p>
             )}
           </div>
           <div>
@@ -170,47 +201,76 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
           </div>
         </div>
 
+        {/* Optional inputs + Upload + Generate */}
         {showOptions && (
-          <div className="flex items-end gap-3 mt-3 pt-3 border-t border-gray-100 animate-fade-in">
-            <div className="flex-1">
-              <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
-                placeholder="关键词（逗号分隔，如：党建, 组织建设）"
-                className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30"
-                disabled={isGenerating} />
+          <div className="mt-3 pt-3 border-t border-gray-100 animate-fade-in space-y-3">
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
+                  placeholder="关键词（逗号分隔，如：党建, 组织建设）"
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30"
+                  disabled={isGenerating} />
+              </div>
+              <div className="flex gap-2">
+                {isGenerating ? (
+                  <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
+                    className="px-6 py-1.5 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600">停止生成</button>
+                ) : (
+                  <button onClick={handleGenerate}
+                    className="px-6 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
+                    <Sparkles size={16} /> 生成公文
+                  </button>
+                )}
+              </div>
             </div>
-            <label className={`flex items-center gap-1 px-3 py-1.5 border rounded text-sm cursor-pointer transition ${
-              isGenerating ? 'opacity-50 cursor-not-allowed' : 'border-gray-300 hover:bg-gray-50'
-            }`}>
-              <Upload size={14} /> {uploading ? '上传中' : '上传参考'}
-              <input type="file" className="hidden" onChange={handleUpload} disabled={isGenerating}
-                accept=".txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.doc,.docx" />
-            </label>
-            <div className="flex gap-2">
-              {isGenerating ? (
-                <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
-                  className="px-6 py-1.5 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition">停止生成</button>
-              ) : (
-                <button onClick={handleGenerate}
-                  className="px-6 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
-                  <Sparkles size={16} /> 生成公文
-                </button>
-              )}
+            {/* Upload area */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-3 text-center transition ${
+                dragOver ? 'border-[#c8102e] bg-red-50' : 'border-gray-300'
+              }`}
+            >
+              <label className="cursor-pointer">
+                <Upload size={18} className="mx-auto text-gray-400 mb-1" />
+                <p className="text-xs text-gray-500">拖拽文件到此处，或<span className="text-[#c8102e]">点击上传</span></p>
+                <p className="text-[10px] text-gray-400">支持 Word / PDF / TXT / 图片，最多5份</p>
+                <input type="file" className="hidden" onChange={handleFileInput} multiple
+                  disabled={isGenerating || uploading}
+                  accept=".txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.doc,.docx" />
+              </label>
+              {uploading && <p className="text-xs text-gray-400 mt-1">上传中...</p>}
             </div>
+            {/* File list */}
+            {files.length > 0 && (
+              <div className="space-y-1">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                    <FileText size={12} className="text-blue-500" />
+                    <span className="flex-1 text-blue-700 truncate">{f.name}</span>
+                    <button onClick={() => setFiles(files.filter((_, j) => j !== i))}
+                      className="text-blue-400 hover:text-red-500"><X size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
+        {/* Compact mode: Generate + Upload */}
         {!showOptions && (
           <div className="flex items-center justify-end gap-2 mt-3">
-            <label className={`flex items-center gap-1 px-3 py-1.5 border rounded text-xs cursor-pointer transition ${
-              isGenerating ? 'opacity-50 cursor-not-allowed' : 'border-gray-300 hover:bg-gray-50'
-            }`}>
+            <label className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded text-xs cursor-pointer hover:bg-gray-50 transition">
               <Upload size={12} /> {uploading ? '上传中' : '上传参考'}
-              <input type="file" className="hidden" onChange={handleUpload} disabled={isGenerating}
+              <input type="file" className="hidden" onChange={handleFileInput} multiple
+                disabled={isGenerating || uploading}
                 accept=".txt,.md,.png,.jpg,.jpeg,.pdf,.doc,.docx" />
             </label>
+            {files.length > 0 && <span className="text-[10px] text-green-600">已上传 {files.length} 份</span>}
             {isGenerating ? (
               <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
-                className="px-5 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600 transition">停止</button>
+                className="px-5 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600">停止</button>
             ) : (
               <button onClick={handleGenerate}
                 className="px-5 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
@@ -220,13 +280,6 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
           </div>
         )}
 
-        {/* Upload indicator */}
-        {uploadedFile && (
-          <div className="mt-2 flex items-center gap-2 text-xs bg-blue-50 border border-blue-200 text-blue-700 p-2 rounded">
-            <FileText size={14} /> 已上传参考：{uploadedFile.name}
-            <button onClick={() => setUploadedFile(null)} className="ml-auto text-blue-500 hover:text-red-500"><X size={14} /></button>
-          </div>
-        )}
         {error && (
           <div className="mt-2 p-2.5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{error}</div>
         )}
@@ -234,25 +287,25 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
 
       {/* Output Area */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Generation Progress */}
+        {/* Progress indicator */}
         {isGenerating && progressStep >= 0 && (
           <div className="mb-6">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-1 mb-2">
               {PROGRESS_STEPS.map((step, i) => {
                 const Icon = step.icon
                 const status = i < progressStep ? 'done' : i === progressStep ? 'active' : 'pending'
                 return (
-                  <div key={step.key} className="flex items-center gap-2">
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all ${
+                  <div key={step.key} className="flex items-center gap-1">
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs transition-all ${
                       status === 'active' ? 'bg-[#c8102e]/10 text-[#c8102e] font-medium animate-pulse' :
                       status === 'done' ? 'bg-green-50 text-green-600' :
                       'bg-gray-100 text-gray-400'
                     }`}>
-                      <Icon size={12} /> {step.label}
-                      {status === 'done' && <Check size={10} />}
+                      <Icon size={11} /> {step.label}
+                      {status === 'done' && <Check size={10} className="text-green-500" />}
                     </div>
                     {i < PROGRESS_STEPS.length - 1 && (
-                      <div className={`w-6 h-0.5 ${i < progressStep - 1 ? 'bg-green-300' : 'bg-gray-200'}`} />
+                      <div className={`w-4 h-0.5 ${i < progressStep - 1 ? 'bg-green-300' : 'bg-gray-200'}`} />
                     )}
                   </div>
                 )
@@ -266,30 +319,67 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed }: Pr
           <FrameworkView framework={framework} titleSuggestion={titleSuggestion} />
         )}
 
-        {/* Content */}
+        {/* Content result panel */}
         {(content || (isGenerating && generateStep === 'content')) && (
-          <ContentView content={content} isStreaming={isGenerating && generateStep === 'content'} />
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden animate-fade-in">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                <FileText size={14} className="text-[#c8102e]" />
+                {isGenerating ? '正在生成...' : '文稿预览/编辑'}
+              </h3>
+              {!isGenerating && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => { setEditMode(!editMode); if (!editMode) setEditedContent(content) }}
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded transition ${
+                      editMode ? 'bg-[#c8102e] text-white' : 'text-gray-500 hover:bg-gray-200'
+                    }`}>
+                    {editMode ? <Eye size={12} /> : <Edit3 size={12} />}
+                    {editMode ? '预览' : '编辑'}
+                  </button>
+                  <button onClick={async () => { await navigator.clipboard.writeText(editMode ? editedContent : content); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-200 rounded transition">
+                    {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? '已复制' : '复制全文'}
+                  </button>
+                  <button onClick={() => window.print()}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-200 rounded transition">
+                    <Download size={12} /> 导出
+                  </button>
+                  <button onClick={handleGenerate}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs text-[#c8102e] hover:bg-red-50 rounded transition">
+                    <RotateCcw size={12} /> 重新生成
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="p-5">
+              {editMode ? (
+                <textarea
+                  value={editedContent}
+                  onChange={(e) => setEditedContent(e.target.value)}
+                  className="w-full min-h-[400px] p-3 border border-gray-200 rounded text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 resize-y font-serif"
+                />
+              ) : (
+                <ContentView content={content} isStreaming={isGenerating && generateStep === 'content'} />
+              )}
+            </div>
+          </div>
         )}
 
         {/* Empty state */}
         {!isGenerating && !content && framework.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <PenTool size={40} className="mb-4 opacity-20" />
-            <p className="text-sm">点击上方「快捷指令」快速开始，或输入主题后点击「生成公文」</p>
+            <p className="text-sm font-medium text-gray-500">开始您的公文写作</p>
+            <p className="text-xs text-gray-400 mt-1">点击上方「快捷指令」快速开始，或在上方输入写作主题后点击「生成公文」</p>
+            <div className="mt-6 grid grid-cols-2 gap-2 text-xs text-gray-400 max-w-xs">
+              <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 支持24种文种自动识别</div>
+              <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 权威知识库检索</div>
+              <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> AI智能风格调节</div>
+              <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 上传参考材料辅助写作</div>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Bottom bar */}
-      {content && !isGenerating && (
-        <div className="px-4 py-2 border-t border-gray-200 bg-white flex items-center justify-between">
-          <span className="text-xs text-gray-500">{titleSuggestion && `《${titleSuggestion}》`} · {content.length} 字</span>
-          <button onClick={async () => { await navigator.clipboard.writeText(content); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-            className="flex items-center gap-1 px-4 py-1.5 text-xs bg-[#c8102e] text-white rounded-lg hover:bg-[#a00d25] transition">
-            {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? '已复制' : '复制全文'}
-          </button>
-        </div>
-      )}
     </div>
   )
 }
