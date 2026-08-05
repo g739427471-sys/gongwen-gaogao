@@ -69,9 +69,12 @@ export default function BrandBanner({ username }: Props) {
 
         {/* 欢迎语 */}
         <div className="pr-6">
-          <p className="text-xs text-white/70 mb-0.5">公文高高 · 你的专属智能文秘</p>
+          <p className="text-xs text-white/70 mb-0.5">公文高高 · 会学习的文秘助手</p>
           <p className="text-sm font-medium leading-relaxed">
-            {welcomeMsg}
+            {status
+              ? `${username}，您好！我是您的专属智能文秘，已为您服务第 ${status.service_days} 天`
+              : `${username}，您好！我是您的专属智能文秘`
+            }
             {status && status.level && (
               <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-white/20 rounded">{status.level}</span>
             )}
@@ -87,7 +90,9 @@ export default function BrandBanner({ username }: Props) {
                 expanded === cap.id ? 'bg-white text-[#c8102e] font-medium' : 'bg-white/15 hover:bg-white/25'
               }`}>
               <cap.icon size={12} />
-              {cap.label}
+              {cap.id === 'learn' && status?.learned_samples > 0
+                ? `已学习${status.learned_samples}篇`
+                : cap.label}
               {expanded === cap.id ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
             </button>
           ))}
