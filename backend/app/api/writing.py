@@ -131,9 +131,8 @@ async def api_enhanced_refine(
     try:
         result = await enhanced_refine(req.content, req.doc_type)
         # 学习用户风格
-        from ..services.style_service import extract_style_features, save_style
-        features = extract_style_features(result.get("refined_content", req.content))
-        save_style(user_id, features)
+        from ..services.style_service import diff_and_learn
+        diff_and_learn(req.content, result.get("refined_content", req.content), user_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"增强润色失败：{str(e)}")
