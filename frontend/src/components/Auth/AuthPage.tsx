@@ -1,18 +1,10 @@
 /** 登录页 — 品牌价值展示 + 登录表单 */
 import { useState } from 'react'
-import { PenLine, Brain, Sparkles, Users, Shield, BookOpen } from 'lucide-react'
+import { PenLine, Star } from 'lucide-react'
 import { login, register } from '../../services/api'
+import { getLoginAdvantages, getAdvantageIcon } from '../../services/advantageEngine'
 
 interface Props { onLogin: (username: string, userId: string) => void }
-
-/** 核心卖点 */
-const SELLING_POINTS = [
-  { icon: Brain, title: '会学习的专属文秘', desc: '越用越像你写的' },
-  { icon: Sparkles, title: '去AI味引擎', desc: '写出来有人味，不套话' },
-  { icon: Users, title: '分步协作写作', desc: '先大纲确认再逐段填' },
-  { icon: Shield, title: '智能审校排版', desc: '一键导出，符合国标' },
-  { icon: BookOpen, title: '权威知识库支撑', desc: '实时调用政策与讲话' },
-]
 
 export default function AuthPage({ onLogin }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -54,15 +46,16 @@ export default function AuthPage({ onLogin }: Props) {
             <span className="text-[#c8102e] font-medium">会学习、去AI味、懂公文规范</span>
           </p>
 
-          {/* 核心卖点列表 */}
+          {/* 核心卖点列表 — 动态从优势引擎读取 */}
           <div className="mt-6 grid grid-cols-1 gap-2 text-left max-w-sm mx-auto">
-            {SELLING_POINTS.map((p) => (
-              <div key={p.title} className="flex items-center gap-3 px-3 py-2 bg-white/60 rounded-lg border border-gray-100">
-                <p.icon size={16} className="text-[#c8102e] shrink-0" />
+            {getLoginAdvantages().map((p) => (
+              <div key={p.id} className="flex items-center gap-3 px-3 py-2 bg-white/60 rounded-lg border border-gray-100 hover:bg-white hover:shadow-sm transition group cursor-default"
+                title={p.advantageDesc}>
+                <span className="text-lg shrink-0">{getAdvantageIcon(p.advantageTitle)}</span>
                 <span className="text-sm text-gray-700">
-                  <span className="font-medium">{p.title}</span>
+                  <span className="font-medium">{p.advantageTitle}</span>
                   <span className="text-gray-400 mx-1.5">—</span>
-                  {p.desc}
+                  {p.advantageSubtitle}
                 </span>
               </div>
             ))}

@@ -6,6 +6,7 @@ import QuickCommands from '../WriterPanel/QuickCommands'
 import OnboardingGuide from './OnboardingGuide'
 import BrandBanner from './BrandBanner'
 import UpdateLog from './UpdateLog'
+import UpdateEntry from '../Admin/UpdateEntry'
 import { PenLine, User, LogOut, Clock, FileText, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 interface Props { username: string; onLogout: () => void }
@@ -18,6 +19,8 @@ export default function MainLayout({ username, onLogout }: Props) {
   const [quickTopic, setQuickTopic] = useState('')
   const [quickDocType, setQuickDocType] = useState('')
   const [autoSearch, setAutoSearch] = useState('')
+  const [adminClicks, setAdminClicks] = useState(0)
+  const [showAdmin, setShowAdmin] = useState(false)
 
   useEffect(() => {
     const seen = localStorage.getItem('gongwen_onboarded')
@@ -99,6 +102,20 @@ export default function MainLayout({ username, onLogout }: Props) {
           </div>
         )}
       </div>
+
+      {/* 隐藏入口 — 连续点击激活管理后台 */}
+      <div className="text-center py-1 bg-[#f5f5f0]">
+        <span
+          className="text-[9px] text-gray-300 cursor-default select-none"
+          onClick={() => { const n = adminClicks + 1; setAdminClicks(n); if (n >= 5) { setShowAdmin(true); setAdminClicks(0) } }}
+          title=""
+        >
+          v2.5.0
+        </span>
+      </div>
+
+      <UpdateEntry visible={showAdmin} onClose={() => setShowAdmin(false)} />
+
     </div>
   )
 }

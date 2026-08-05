@@ -1,0 +1,80 @@
+{
+  "updates": [
+    {
+      "id": "update_001",
+      "version": "v2.3.0",
+      "date": "2026-08-05",
+      "type": "新增功能",
+      "description": "系统学习您的写作风格，生成的文稿越来越像您本人写的",
+      "isMajor": true,
+      "isAdvantage": true,
+      "advantageTitle": "会学习的专属文秘",
+      "advantageSubtitle": "越用越像你写的",
+      "advantageDesc": "系统持续学习您的修改和用词偏好，30天后生成的文稿风格与您高度一致",
+      "displayOnLogin": true,
+      "displayOnHome": true,
+      "displayOrder": 1
+    },
+    {
+      "id": "update_002",
+      "version": "v2.2.0",
+      "date": "2026-08-03",
+      "type": "新增功能",
+      "description": "自动识别并改写套话和排比句，让内容读起来自然务实",
+      "isMajor": true,
+      "isAdvantage": true,
+      "advantageTitle": "去AI味引擎",
+      "advantageSubtitle": "内容自然务实",
+      "advantageDesc": "自动识别并改写空话套话和程式化表述，让文章读起来像人写的",
+      "displayOnLogin": true,
+      "displayOnHome": true,
+      "displayOrder": 2
+    },
+    {
+      "id": "update_003",
+      "version": "v2.1.0",
+      "date": "2026-07-30",
+      "type": "新增功能",
+      "description": "先出大纲让您确认，再逐段生成正文",
+      "isMajor": true,
+      "isAdvantage": true,
+      "advantageTitle": "分步协作写作",
+      "advantageSubtitle": "先确认大纲再动笔",
+      "advantageDesc": "先生成框架供您确认，再逐段填充内容，杜绝一次性生成不靠谱的全文",
+      "displayOnLogin": true,
+      "displayOnHome": true,
+      "displayOrder": 3
+    },
+    {
+      "id": "update_004",
+      "version": "v2.0.0",
+      "date": "2026-07-25",
+      "type": "新增功能",
+      "description": "五层检测：错别字+语法+格式+敏感词+事实核验，一键导出符合国标",
+      "isMajor": true,
+      "isAdvantage": true,
+      "advantageTitle": "智能审校排版",
+      "advantageSubtitle": "一键检测，符合国标",
+      "advantageDesc": "五层智能审校，一键导出符合《党政机关公文格式》的Word文档",
+      "displayOnLogin": true,
+      "displayOnHome": true,
+      "displayOrder": 4
+    },
+    {
+      "id": "update_005",
+      "version": "v1.5.0",
+      "date": "2026-07-20",
+      "type": "优化体验",
+      "description": "实时调用人民日报、求是网等权威来源的政策文件和讲话精神",
+      "isMajor": false,
+      "isAdvantage": true,
+      "advantageTitle": "权威知识库支撑",
+      "advantageSubtitle": "写材料有据可依",
+      "advantageDesc": "实时调用权威来源的政策文件和讲话精神，生成内容自动标注引用来源",
+      "displayOnLogin": true,
+      "displayOnHome": true,
+      "displayOrder": 5
+    }
+  ],
+  "lastUpdated": "2026-08-05"
+}
