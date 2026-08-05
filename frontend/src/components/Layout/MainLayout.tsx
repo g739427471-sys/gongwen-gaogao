@@ -5,6 +5,7 @@ import ReferencePanel from '../ReferencePanel/ReferencePanel'
 import QuickCommands from '../WriterPanel/QuickCommands'
 import OnboardingGuide from './OnboardingGuide'
 import BrandBanner from './BrandBanner'
+import UpdateLog from './UpdateLog'
 import { PenLine, User, LogOut, Clock, FileText, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 interface Props { username: string; onLogout: () => void }
@@ -81,8 +82,9 @@ export default function MainLayout({ username, onLogout }: Props) {
 
         {/* Right: Smart Assistant */}
         {rightOpen && (
-          <div className="hidden xl:block w-[25%] min-w-[260px] border-l border-gray-200 bg-white shrink-0">
-            <ReferencePanel autoSearchQuery={autoSearch} />
+          <div className="hidden xl:flex xl:flex-col w-[25%] min-w-[260px] border-l border-gray-200 bg-white shrink-0">
+            <div className="flex-1 overflow-hidden"><ReferencePanel autoSearchQuery={autoSearch} /></div>
+            <UpdateLog />
           </div>
         )}
         {/* Right panel overlay for smaller screens */}
