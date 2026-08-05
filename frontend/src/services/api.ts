@@ -274,6 +274,18 @@ export async function getNewsFeed(page: number = 1, pageSize: number = 10) {
   }>(`/knowledge/news?page=${page}&page_size=${pageSize}`)
 }
 
+export async function addKnowledge(title: string, content: string, category: string = 'article', source: string = '', source_url: string = '') {
+  return request<{status: string}>(`${API_BASE}/knowledge/add`, {
+    method: 'POST', body: JSON.stringify({title, content, category, source, source_url}),
+  })
+}
+
+export async function getCitations(content: string, knowledgeIds: string[] = []) {
+  return request<{citations: any[], count: number}>(`${API_BASE}/knowledge/citations`, {
+    method: 'POST', body: JSON.stringify({content, knowledge_ids: knowledgeIds}),
+  })
+}
+
 export async function refreshNews() {
   return request<{ status: string; count?: number; updated_at?: string; detail?: string }>(
     '/knowledge/news/refresh', { method: 'POST' },

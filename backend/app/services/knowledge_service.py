@@ -1,11 +1,18 @@
 """
-知识库服务 — 带缓存的语义+关键词混合检索 + DeepSeek AI搜索。
+RAG引擎 — 混合检索 + 重排序 + 引用溯源。
+
+检索策略：
+1. 语义检索（ChromaDB + bge-small-zh）→ 候选集
+2. 关键词检索（SQLite 中文分词）→ 候选集
+3. 融合排序（加权分数合并 + 去重）→ Top-K
+4. 引用溯源——每条结果记录来源URL和原文片段
 """
 import os
 import json
+import re
 import time
 import httpx
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 try:
     import chromadb
@@ -22,15 +29,12 @@ except ImportError:
 
 from ..config import settings
 
-# ========== 检索缓存（大幅提速） ==========
-
-_cache: dict = {}          # key -> (results, timestamp)
-CACHE_TTL = 300            # 5分钟缓存
-
+# ========== 缓存 ==========
+_cache: dict = {}
+CACHE_TTL = 300
 
 def _cache_key(query: str, category: str = None, top_k: int = 5) -> str:
     return f"{query}|{category or ''}|{top_k}"
-
 
 def _cache_get(key: str) -> Optional[List[dict]]:
     if key in _cache:
@@ -40,21 +44,17 @@ def _cache_get(key: str) -> Optional[List[dict]]:
         del _cache[key]
     return None
 
-
 def _cache_set(key: str, results: List[dict]):
     _cache[key] = (results, time.time())
-    # 限制缓存大小
     if len(_cache) > 200:
         oldest = min(_cache, key=lambda k: _cache[k][1])
         del _cache[oldest]
 
 
-# ========== ChromaDB 客户端（懒加载） ==========
-
+# ========== ChromaDB ==========
 _chroma_client = None
 _embedding_model = None
 _collection = None
-
 
 def _get_chroma_client():
     global _chroma_client
@@ -67,13 +67,11 @@ def _get_chroma_client():
         )
     return _chroma_client
 
-
 def _get_embedding_model():
     global _embedding_model
     if _embedding_model is None and HAS_SENTENCE_TRANSFORMERS:
         _embedding_model = SentenceTransformer(settings.embedding_model)
     return _embedding_model
-
 
 def _get_collection():
     global _collection
@@ -87,192 +85,215 @@ def _get_collection():
     return _collection
 
 
-# ========== DeepSeek AI 搜索（如果配置了 API Key） ==========
-
-def _has_deepseek() -> bool:
-    return bool(settings.deepseek_api_key)
-
-
-async def _deepseek_search(query: str, top_k: int = 10) -> List[dict]:
-    """使用 DeepSeek API 进行智能知识检索"""
-    prompt = f"""请针对以下查询，检索并整理权威的公文写作参考材料。
-
-查询：{query}
-
-请返回 {top_k} 条相关知识条目。每条格式：
-{{"title":"条目标题","content":"完整的参考内容（300-800字，包含具体论述、规范表述、政策依据）","source":"来源出处","category":"speech|policy|article|standard"}}
-
-要求：
-1. 内容必须准确、权威，符合人民日报、求是、学习强国等官方媒体口径
-2. 涉及习近平总书记论述的必须原文准确引用
-3. 政治表述必须规范、标准
-4. 返回纯JSON数组，不要其他文字
-5. 如果查询涉及政治术语，优先返回官方权威解读
-6. 没有找到相关内容也要返回空数组 []"""
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://api.deepseek.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.deepseek_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.deepseek_model,
-                    "messages": [
-                        {"role": "system", "content": "你是人民日报资深编辑，精通党政机关公文写作规范。你只输出JSON数组。"},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 4096,
-                },
-            )
-            data = resp.json()
-            text = data["choices"][0]["message"]["content"]
-
-            # 解析JSON
-            import re
-            json_match = re.search(r'\[.*\]', text, re.DOTALL)
-            if not json_match:
-                return []
-            items = json.loads(json_match.group(0))
-
-            # 格式化结果
-            results = []
-            for i, item in enumerate(items):
-                results.append({
-                    "id": f"ds_{i}",
-                    "category": item.get("category", "article"),
-                    "title": item.get("title", ""),
-                    "content": item.get("content", ""),
-                    "source": item.get("source", ""),
-                    "score": 1.0,
-                })
-            return results
-    except Exception:
-        return []
-
+# ========== 混合检索 + 重排序 ==========
 
 def search_knowledge(
     query: str,
     category: Optional[str] = None,
     top_k: int = 10,
+    source: Optional[str] = None,
 ) -> List[dict]:
-    """搜索知识库 — 先查缓存，再查ChromaDB/SQLite"""
+    """混合检索：语义 + 关键词 → 融合排序 → Top-K"""
     ck = _cache_key(query, category, top_k)
     cached = _cache_get(ck)
     if cached:
-        return cached
+        return _apply_source_filter(cached, source)
 
-    results = []
+    # 1. 语义检索（ChromaDB）
+    semantic_results = _semantic_search(query, category, top_k=top_k * 2)
 
-    # 尝试 ChromaDB 语义搜索
+    # 2. 关键词检索（SQLite）
+    keyword_results = _keyword_search(query, category, top_k=top_k * 2)
+
+    # 3. 融合排序
+    merged = _merge_and_rerank(semantic_results, keyword_results, query, top_k)
+
+    _cache_set(ck, merged)
+    return _apply_source_filter(merged, source)
+
+
+def _semantic_search(query: str, category: Optional[str] = None, top_k: int = 20) -> List[dict]:
+    """ChromaDB语义检索"""
     collection = _get_collection()
     model = _get_embedding_model()
-
-    if collection and model:
-        try:
-            query_embedding = model.encode(query).tolist()
-            where_filter = {"category": category} if category else None
-
-            chroma_results = collection.query(
-                query_embeddings=[query_embedding],
-                n_results=top_k,
-                where=where_filter,
-                include=["documents", "metadatas", "distances"],
-            )
-
-            if chroma_results and chroma_results["ids"] and chroma_results["ids"][0]:
-                ids = chroma_results["ids"][0]
-                documents = chroma_results["documents"][0]
-                metadatas = chroma_results["metadatas"][0]
-                distances = chroma_results["distances"][0]
-
-                for i, doc_id in enumerate(ids):
-                    meta = metadatas[i] if i < len(metadatas) else {}
-                    distance = distances[i] if i < len(distances) else 0.0
-                    results.append({
-                        "id": doc_id,
-                        "category": meta.get("category", ""),
-                        "title": meta.get("title", ""),
-                        "content": documents[i] if i < len(documents) else "",
-                        "source": meta.get("source", ""),
-                        "score": round(1.0 - distance, 4),
-                    })
-
-                _cache_set(ck, results)
-                return results
-        except Exception:
-            pass
-
-    # 回退 SQLite
-    results = _sqlite_keyword_search(query, category, top_k)
-    _cache_set(ck, results)
-    return results
+    if not collection or not model:
+        return []
+    try:
+        query_embedding = model.encode(query).tolist()
+        where = {"category": category} if category else None
+        results = collection.query(
+            query_embeddings=[query_embedding], n_results=top_k,
+            where=where, include=["documents", "metadatas", "distances"],
+        )
+        if not results or not results.get("ids") or not results["ids"][0]:
+            return []
+        items = []
+        for i, doc_id in enumerate(results["ids"][0]):
+            meta = results["metadatas"][0][i] if i < len(results["metadatas"][0]) else {}
+            distance = results["distances"][0][i] if i < len(results["distances"][0]) else 0.0
+            items.append(_format_result(doc_id, meta, results["documents"][0][i], 1.0 - distance))
+        return items
+    except Exception:
+        return []
 
 
-def _sqlite_keyword_search(query: str, category: Optional[str] = None, top_k: int = 10) -> List[dict]:
-    """SQLite 关键词搜索 — 增强中文分词"""
+def _keyword_search(query: str, category: Optional[str] = None, top_k: int = 20) -> List[dict]:
+    """SQLite关键词搜索 + 中文分词增强"""
     from ..database import SessionLocal
     from ..models import KnowledgeChunk
-
     db = SessionLocal()
     try:
         q = db.query(KnowledgeChunk)
         if category:
             q = q.filter(KnowledgeChunk.category == category)
-
         chunks = q.all()
         scored = []
         for c in chunks:
             score = 0
-            cl = c.content
-            tl = c.title
-
-            # 单字匹配（适合中文）
+            # 完整词组匹配
+            if query in c.title: score += 10
+            if query in c.content: score += 5
+            # 字符级匹配
             for ch in query:
-                if ch in tl: score += 3
-                if ch in cl: score += 1
-            # 完整词匹配
-            if query in tl: score += 10
-            if query in cl: score += 5
-
+                if ch in c.title: score += 3
+                if ch in c.content: score += 1
+            # 标题中包含查询词→高权重
+            query_chars = set(query.replace(' ', ''))
+            title_chars = set(c.title.replace(' ', ''))
+            overlap = query_chars & title_chars
+            score += len(overlap) * 2
             if score > 0:
-                scored.append({
-                    "id": c.id, "category": c.category,
-                    "title": c.title, "content": c.content,  # 完整内容
-                    "source": c.source, "score": float(score),
-                })
-
+                scored.append(_format_result(c.id, {"category": c.category, "title": c.title, "source": c.source}, c.content, score / 30.0))
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
     finally:
         db.close()
 
 
+def _merge_and_rerank(semantic: List[dict], keyword: List[dict], query: str, top_k: int) -> List[dict]:
+    """融合排序：语义结果权重0.6 + 关键词结果权重0.4 → 去重"""
+    merged: Dict[str, dict] = {}
+    # 语义结果（高权重）
+    for item in semantic:
+        merged[item["id"]] = item
+        item["score"] = item.get("score", 0.5) * 0.6
+    # 关键词结果（补充）
+    for item in keyword:
+        if item["id"] in merged:
+            merged[item["id"]]["score"] += item.get("score", 0.3) * 0.4
+        else:
+            item["score"] = item.get("score", 0.3) * 0.4
+            merged[item["id"]] = item
+    # 排序 → Top-K
+    ranked = sorted(merged.values(), key=lambda x: x["score"], reverse=True)
+    for i, item in enumerate(ranked):
+        item["rank"] = i + 1
+    return ranked[:top_k]
+
+
+def _format_result(doc_id: str, meta: dict, content: str, score: float) -> dict:
+    return {
+        "id": doc_id,
+        "category": meta.get("category", ""),
+        "title": meta.get("title", ""),
+        "content": content,
+        "source": meta.get("source", ""),
+        "source_url": meta.get("source_url", meta.get("url", "")),
+        "date": meta.get("date", ""),
+        "score": round(min(max(score, 0), 1), 4),
+        "match_percent": round(min(max(score, 0), 1) * 100),
+    }
+
+
+def _apply_source_filter(results: List[dict], source: Optional[str]) -> List[dict]:
+    if not source:
+        return results
+    return [r for r in results if source in (r.get("source", ""))]
+
+
+# ========== 引用溯源 ==========
+
+def extract_citations(content: str, knowledge_results: List[dict]) -> List[dict]:
+    """
+    从生成内容中提取引用，匹配知识库来源。
+    返回引用列表供前端展示。
+    """
+    citations = []
+    for kr in knowledge_results:
+        title = kr.get("title", "")
+        source = kr.get("source", "")
+        source_url = kr.get("source_url", "")
+        # 检查生成内容中是否引用了此来源
+        if title and (title[:10] in content or source in content):
+            citations.append({
+                "title": title,
+                "source": source or "知识库",
+                "url": source_url or "",
+                "snippet": kr.get("content", "")[:200] + "...",
+                "relevance": kr.get("match_percent", 0),
+            })
+    # 去重（按title）
+    seen = set()
+    unique = []
+    for c in citations:
+        if c["title"] not in seen:
+            seen.add(c["title"])
+            unique.append(c)
+    return unique[:10]
+
+
+# ========== 知识库管理 ==========
+
+def add_to_knowledge(title: str, content: str, category: str, source: str = "", source_url: str = "") -> bool:
+    """添加文档到知识库（向量化 + SQLite双写）"""
+    from ..database import SessionLocal
+    from ..models import KnowledgeChunk
+    import uuid
+
+    chunk_id = str(uuid.uuid4())
+
+    # 1. 写SQLite
+    db = SessionLocal()
+    try:
+        chunk = KnowledgeChunk(
+            id=chunk_id, category=category, title=title,
+            content=content, source=source,
+        )
+        db.add(chunk); db.commit()
+    finally:
+        db.close()
+
+    # 2. 写ChromaDB
+    collection = _get_collection()
+    model = _get_embedding_model()
+    if collection and model:
+        try:
+            embedding = model.encode(content).tolist()
+            collection.add(
+                ids=[chunk_id], embeddings=[embedding],
+                documents=[content],
+                metadatas=[{"category": category, "title": title, "source": source, "source_url": source_url}],
+            )
+        except Exception:
+            pass
+
+    # 清缓存
+    _cache.clear()
+    return True
+
+
 def get_categories_stats() -> dict:
     from ..database import SessionLocal
     from ..models import KnowledgeChunk
     from sqlalchemy import func
-
     db = SessionLocal()
     try:
-        results = db.query(
-            KnowledgeChunk.category,
-            func.count(KnowledgeChunk.id)
-        ).group_by(KnowledgeChunk.category).all()
-        cats = {cat: count for cat, count in results}
-        return {"categories": cats, "total_chunks": sum(cats.values())}
+        results = db.query(KnowledgeChunk.category, func.count(KnowledgeChunk.id)).group_by(KnowledgeChunk.category).all()
+        return {"categories": {cat: cnt for cat, cnt in results}, "total_chunks": sum(c for _, c in results)}
     finally:
         db.close()
 
 
 def init_chromadb():
-    try:
-        _get_chroma_client()
-        _get_embedding_model()
-        _get_collection()
-        return True
-    except Exception:
-        return False
+    try: _get_chroma_client(); _get_embedding_model(); _get_collection(); return True
+    except Exception: return False

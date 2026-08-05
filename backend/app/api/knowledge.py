@@ -1,13 +1,14 @@
 """
 知识库 API 路由 + 近期简讯。
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from ..utils.auth import get_current_user_id
 
 from ..schemas import (
     KnowledgeSearchResponse, KnowledgeChunkResponse, KnowledgeCategoriesResponse,
 )
 from ..services.knowledge_service import (
-    search_knowledge, get_categories_stats, _has_deepseek, _deepseek_search,
+    search_knowledge, get_categories_stats, add_to_knowledge, extract_citations,
 )
 
 router = APIRouter(prefix="/api/knowledge", tags=["知识库"])
@@ -17,21 +18,18 @@ router = APIRouter(prefix="/api/knowledge", tags=["知识库"])
 async def api_search_knowledge(
     q: str = Query(..., description="搜索关键词"),
     category: str = Query(default=None),
+    source: str = Query(default=None),
     top_k: int = Query(default=5, ge=1, le=20),
 ):
-    """搜索知识库（DeepSeek AI 优先，无配置则本地搜索）"""
+    """混合检索知识库：语义+关键词融合排序"""
     try:
-        # 优先使用 DeepSeek AI 搜索
-        if _has_deepseek():
-            results = await _deepseek_search(query=q, top_k=top_k)
-        else:
-            results = search_knowledge(query=q, category=category, top_k=top_k)
+        results = search_knowledge(query=q, category=category, top_k=top_k, source=source)
         items = [
             KnowledgeChunkResponse(
                 id=r["id"],
                 category=r["category"],
                 title=r["title"],
-                content=r["content"],  # 返回完整内容
+                content=r["content"],
                 source=r["source"],
                 score=r["score"],
             )
@@ -81,3 +79,39 @@ async def api_refresh_news():
     """手动强制刷新简讯"""
     result = await refresh_news()
     return result
+
+
+# ========== RAG增强 ==========
+
+from pydantic import BaseModel
+
+class AddKnowledgeRequest(BaseModel):
+    title: str
+    content: str
+    category: str = "article"
+    source: str = ""
+    source_url: str = ""
+
+@router.post("/add")
+async def api_add_to_knowledge(req: AddKnowledgeRequest, user_id: str = Depends(get_current_user_id)):
+    """用户上传文档到知识库 — 自动向量化"""
+    ok = add_to_knowledge(
+        title=req.title, content=req.content, category=req.category,
+        source=req.source, source_url=req.source_url,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="添加失败")
+    return {"status": "ok", "title": req.title}
+
+
+class CitationRequest(BaseModel):
+    content: str
+    knowledge_ids: list = []
+
+@router.post("/citations")
+async def api_get_citations(req: CitationRequest):
+    """获取生成内容中引用的知识库来源"""
+    # 用内容检索
+    results = search_knowledge(query=req.content[:200], top_k=5)
+    citations = extract_citations(req.content, results)
+    return {"citations": citations, "count": len(citations)}
