@@ -212,46 +212,81 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
           </button>
         </div>
 
-        {/* Topic input */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
-              placeholder="请输入写作主题，例如：关于2026年上半年党建工作情况的总结报告。您也可以指定文种（通知/报告/请示/讲话稿等）和字数要求。"
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 focus:border-[#c8102e] placeholder-gray-400"
-              disabled={isGenerating} />
-            <p className="text-[10px] text-gray-400 mt-1">支持上传参考文档（Word/PDF/TXT，最多5份），生成更贴合您需求的文稿。</p>
-            {detectReason && (
-              <p className="text-xs text-green-600 mt-0.5">📋 {docType} — {detectReason}</p>
-            )}
-          </div>
-          <div>
+        {/* Core input row: 文种 + 主题 + 字数 */}
+        <div className="flex items-stretch gap-2">
+          <div className="shrink-0">
             <DocTypeSelector value={docType} onChange={setDocType} disabled={isGenerating} />
           </div>
+          <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
+            placeholder="输入写作主题，如：2026年上半年党建工作总结"
+            className="flex-1 h-12 px-4 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 focus:border-[#c8102e] placeholder-gray-400"
+            disabled={isGenerating} />
+          <div className="flex items-center gap-1 shrink-0">
+            {[300, 800, 2000].map(n => (
+              <button key={n} onClick={() => setKeywords(prev => prev.includes(`约${n}字`) ? prev.replace(`约${n}字`, '').trim() : `约${n}字`)}
+                className={`px-2 py-1 rounded text-[10px] border transition ${
+                  keywords.includes(`约${n}字`) ? 'border-[#c8102e] bg-[#c8102e]/5 text-[#c8102e]' : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                }`}
+                title="设定字数要求">{n}字</button>
+            ))}
+          </div>
+        </div>
+        {detectReason && <p className="text-xs text-green-600 mt-1">📋 {docType} — {detectReason}</p>}
+
+        {/* AI风格 — 独立一行 */}
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-400">AI风格：</span>
+            {FLAVOR_OPTIONS.map(opt => (
+              <button key={opt.value} onClick={() => setFlavor(opt.value)}
+                className={`px-2.5 py-1 rounded-full text-[11px] transition border ${
+                  flavor === opt.value ? 'border-[#c8102e] bg-[#c8102e]/5 text-[#c8102e] font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}>{opt.label}</button>
+            ))}
+          </div>
+          <span className="text-[10px] text-gray-400">平衡规范与流畅度，日常使用推荐「标准」</span>
         </div>
 
-        {/* Optional inputs + Upload + Generate */}
+        {/* 上传 + 生成按钮 */}
+        <div className="flex items-center gap-3 mt-2">
+          {/* Upload button */}
+          <label className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-300 rounded-lg text-xs text-gray-500 cursor-pointer hover:border-gray-400 transition">
+            <Upload size={13} /> 上传参考
+            <input type="file" onChange={handleFileInput} multiple className="hidden"
+              accept=".doc,.docx,.pdf,.txt,.md" disabled={isGenerating} />
+          </label>
+
+          {/* File chips */}
+          {files.map((f, i) => (
+            <span key={i} className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-[10px] text-gray-600">
+              {f.name.length > 12 ? f.name.slice(0,12)+'…' : f.name}
+              <button onClick={() => setFiles(fs => fs.filter((_,j) => j !== i))}><X size={10}/></button>
+            </span>
+          ))}
+
+          <div className="flex-1" />
+
+          {/* Generate button */}
+          {isGenerating ? (
+            <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
+              className="h-12 px-8 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition">
+              停止生成
+            </button>
+          ) : (
+            <button onClick={handleGenerateFramework}
+              className="h-12 px-8 bg-[#c8102e] text-white rounded-lg text-sm font-bold hover:bg-[#a00d25] active:scale-95 transition-all flex items-center gap-2 shadow-md shadow-[#c8102e]/20">
+              <Sparkles size={18} /> 生成公文
+            </button>
+          )}
+        </div>
+
+        {/* Upload drop zone */}
         {showOptions && (
-          <div className="mt-3 pt-3 border-t border-gray-100 animate-fade-in space-y-3">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
-                  placeholder="关键词（逗号分隔，如：党建, 组织建设）"
-                  className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30"
-                  disabled={isGenerating} />
-              </div>
-              <div className="flex gap-2">
-                {isGenerating ? (
-                  <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
-                    className="px-6 py-1.5 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600">停止生成</button>
-                ) : (
-                  <button onClick={handleGenerateFramework}
-                    className="px-6 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
-                    <Sparkles size={16} /> 生成公文
-                  </button>
-                )}
-              </div>
-            </div>
-            {/* Upload area */}
+          <div className="mt-2 pt-2 border-t border-gray-100 animate-fade-in">
+            <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
+              placeholder="关键词（逗号分隔，如：党建, 组织建设）"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 mb-2"
+              disabled={isGenerating} />
             <div
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}

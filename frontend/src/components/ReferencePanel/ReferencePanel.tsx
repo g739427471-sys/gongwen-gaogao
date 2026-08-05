@@ -122,10 +122,26 @@ export default function ReferencePanel({ autoSearchQuery }: Props) {
             </button>
           )}
           {!query && results.length === 0 && (
-            <div className="text-center py-12">
-              <BookOpen size={36} className="mx-auto text-gray-300 mb-3" />
-              <p className="text-sm text-gray-400">AI智能检索权威资料</p>
-              <p className="text-xs text-gray-300 mt-1">输入关键词，从人民日报、求是网等来源检索</p>
+            <div className="space-y-3">
+              <p className="text-[10px] text-gray-400 font-medium">📰 今日推荐阅读</p>
+              <div className="space-y-2">
+                {[
+                  {title:'以彻底的自我革命精神推进全面从严治党',source:'人民日报',date:'2026-08-05'},
+                  {title:'深刻把握新质生产力的内涵要义',source:'求是网',date:'2026-08-04'},
+                  {title:'全面推进美丽中国建设的行动纲领',source:'学习强国',date:'2026-08-03'},
+                  {title:'全党开展党纪学习教育综述',source:'共产党员网',date:'2026-08-02'},
+                  {title:'坚定不移推动高质量发展',source:'人民日报',date:'2026-08-01'},
+                ].map((item, i) => (
+                  <div key={i} className="bg-gray-50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-100 transition"
+                    onClick={() => { setQuery(item.title); setActiveTab('search'); handleSearch(item.title) }}>
+                    <p className="text-[11px] font-medium text-gray-700 leading-snug mb-1">{item.title}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] bg-gray-200 px-1 rounded text-gray-500">{item.source}</span>
+                      <span className="text-[9px] text-gray-400">{item.date}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </>
