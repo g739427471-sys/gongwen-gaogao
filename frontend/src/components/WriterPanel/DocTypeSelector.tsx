@@ -1,22 +1,24 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChevronDown } from 'lucide-react'
 
+// 常用写作类型，不再强制15种法定文种
 const DOC_TYPES = [
-  { name: '决议', category: '下行文' },
-  { name: '决定', category: '下行文' },
-  { name: '命令', category: '下行文' },
-  { name: '公报', category: '下行文' },
-  { name: '公告', category: '下行文' },
-  { name: '通告', category: '下行文' },
-  { name: '意见', category: '下行/上行' },
-  { name: '通知', category: '下行文' },
-  { name: '通报', category: '下行文' },
-  { name: '报告', category: '上行文' },
-  { name: '请示', category: '上行文' },
-  { name: '批复', category: '下行文' },
-  { name: '议案', category: '平行文' },
-  { name: '函', category: '平行文' },
-  { name: '纪要', category: '下行/平行' },
+  { name: '通用/自动', category: '智能识别' },
+  { name: '通知', category: '常用' },
+  { name: '报告', category: '常用' },
+  { name: '请示', category: '常用' },
+  { name: '函', category: '常用' },
+  { name: '纪要', category: '常用' },
+  { name: '意见', category: '常用' },
+  { name: '通报', category: '常用' },
+  { name: '工作总结', category: '事务文书' },
+  { name: '讲话稿', category: '事务文书' },
+  { name: '实施方案', category: '事务文书' },
+  { name: '调研报告', category: '事务文书' },
+  { name: '汇报材料', category: '事务文书' },
+  { name: '心得体会', category: '事务文书' },
+  { name: '工作计划', category: '事务文书' },
+  { name: '述职报告', category: '事务文书' },
 ]
 
 interface Props {
@@ -39,24 +41,28 @@ export default function DocTypeSelector({ value, onChange, disabled }: Props) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const selected = DOC_TYPES.find((d) => d.name === value) || DOC_TYPES[7]
+  const selected = DOC_TYPES.find((d) => d.name === value) || DOC_TYPES[0]
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
         onClick={() => !disabled && setOpen(!open)}
-        className={`flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-md text-sm min-w-[90px] bg-white hover:border-gray-400 transition ${
+        className={`flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-md text-sm min-w-[100px] bg-white hover:border-gray-400 transition ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
         }`}
         disabled={disabled}
+        title="选择文种（可选，留空则自动识别）"
       >
         <span>{selected.name}</span>
         <ChevronDown size={14} className="text-gray-400" />
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-64 overflow-y-auto">
+        <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-72 overflow-y-auto">
+          <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-100 sticky top-0 bg-white">
+            选填 · 留空自动识别文种
+          </div>
           {DOC_TYPES.map((dt) => (
             <button
               key={dt.name}
@@ -70,7 +76,7 @@ export default function DocTypeSelector({ value, onChange, disabled }: Props) {
               }}
             >
               <span>{dt.name}</span>
-              <span className="text-xs text-gray-400">{dt.category}</span>
+              <span className="text-[10px] text-gray-400">{dt.category}</span>
             </button>
           ))}
         </div>

@@ -36,9 +36,32 @@ export function clearStoredUser() {
   localStorage.removeItem('user')
 }
 
+// ========== 前端请求缓存（减少隧道延迟） ==========
+
+const apiCache = new Map<string, { data: any; ts: number }>()
+const CACHE_MS = 120000 // 2分钟缓存
+
+function cacheGet(key: string): any | null {
+  const entry = apiCache.get(key)
+  if (entry && Date.now() - entry.ts < CACHE_MS) return entry.data
+  if (entry) apiCache.delete(key)
+  return null
+}
+
+function cacheSet(key: string, data: any) {
+  if (apiCache.size > 200) { const first = apiCache.keys().next().value; apiCache.delete(first) }
+  apiCache.set(key, { data, ts: Date.now() })
+}
+
 // ========== 通用 fetch ==========
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  // GET请求走缓存
+  const cacheKey = `${options?.method || 'GET'}:${url}`
+  if (!options?.method || options.method === 'GET') {
+    const cached = cacheGet(cacheKey)
+    if (cached) return cached as T
+  }
   const token = getToken()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -58,7 +81,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error(err.detail || `请求失败: ${res.status}`)
   }
 
-  return res.json()
+  const data = await res.json()
+  // 缓存GET结果
+  if (!options?.method || options.method === 'GET') {
+    cacheSet(cacheKey, data)
+  }
+  return data
 }
 
 // ========== 认证 API ==========

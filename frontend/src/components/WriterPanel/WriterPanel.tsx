@@ -37,7 +37,7 @@ const FLAVOR_OPTIONS = [
 
 export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAutoSearch }: Props) {
   const [topic, setTopic] = useState('')
-  const [docType, setDocType] = useState('通知')
+  const [docType, setDocType] = useState('通用/自动')
   const [keywords, setKeywords] = useState('')
   const [framework, setFramework] = useState<OutlineItem[]>([])
   const [titleSuggestion, setTitleSuggestion] = useState('')
@@ -132,55 +132,28 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
     finally { setExporting(false) }
   }
 
-  // Generate
-  const handleGenerate = useCallback(async () => {
-    if (!topic.trim()) { setError('请输入写作主题。您也可以点击上方快捷指令快速开始。'); return }
-    setError(''); setContent(''); setEditedContent(''); setEditMode(false); setAuditResult(null)
-    setIsGenerating(true); setGenerateStep('idle')
+  // ====== Step 1: Framework Only ======
+  const handleGenerateFramework = useCallback(async () => {
+    if (!topic.trim()) { setError('请输入写作主题。'); return }
+    setError(''); setContent(''); setIsGenerating(true); setGenerateStep('framework'); setProgressStep(0)
     triggerAutoSearch(topic.trim())
-
-    // Animate progress
-    setProgressStep(0)
-    const advance = () => setProgressStep(p => {
-      if (p >= 3) return 3
-      return p + 1
-    })
-    const t1 = setTimeout(() => advance(), 1500)
-    const t2 = setTimeout(() => advance(), 3500)
-
     const kwList = keywords.split(/[,，、\s]+/).filter(Boolean)
-    try {
-      const fwResult = await generateFramework(topic.trim(), docType, kwList)
-      clearTimeout(t1); clearTimeout(t2); setProgressStep(2)
-      setFramework(fwResult.framework); setTitleSuggestion(fwResult.title_suggestion)
-      setGenerateStep('content')
-      const t3 = setTimeout(() => advance(), 1000)
+    try { const fw = await generateFramework(topic.trim(), docType, kwList); setFramework(fw.framework); setTitleSuggestion(fw.title_suggestion); setProgressStep(2); setIsGenerating(false); setGenerateStep('awaiting_confirm') }
+    catch (err: any) { setProgressStep(-1); setIsGenerating(false); setError(err.message || '大纲生成失败') }
+  }, [topic, docType, keywords])
 
-      const refText = files.map(f => f.text).join('\n---\n')
-      const instructions = `[AI风格: ${flavor}]` + (refText ? `\n参考材料:\n${refText}` : '')
-      abortRef.current = generateContentStream(
-        topic.trim(), docType, kwList, fwResult.framework,
-        instructions,
-        (text) => setContent(prev => prev + text),
-        (result: GenerationComplete) => {
-          clearTimeout(t3); setProgressStep(4)
-          setContent(result.content); setFramework(result.framework || fwResult.framework)
-          setTitleSuggestion(result.title || fwResult.title_suggestion)
-          setIsGenerating(false); setGenerateStep('done')
-          setTimeout(() => setProgressStep(-1), 3000)
-        },
-        (errMsg) => {
-          clearTimeout(t3); setProgressStep(-1)
-          setError(errMsg || '生成失败。请检查网络连接后重试，或缩短主题后重新生成。')
-          setIsGenerating(false); setGenerateStep('idle')
-        },
-      )
-    } catch (err: any) {
-      setProgressStep(-1)
-      setError(err.message || '生成失败。请检查网络连接和API配置后重试。')
-      setIsGenerating(false); setGenerateStep('idle')
-    }
-  }, [topic, docType, keywords, files, flavor])
+  // ====== Step 2: Content (after confirm) ======
+  const handleGenerateContent = useCallback(async () => {
+    setError(''); setIsGenerating(true); setGenerateStep('content'); setProgressStep(3)
+    const kwList = keywords.split(/[,，、\s]+/).filter(Boolean)
+    const refText = files.map(f => f.text).join('\n---\n')
+    const inst = `[AI风格: ${flavor}]` + (refText ? `\n参考材料:${refText}` : '')
+    abortRef.current = generateContentStream(topic.trim(), docType, kwList, framework, inst,
+      (text) => setContent(prev => prev + text),
+      (r) => { setProgressStep(4); setIsGenerating(false); setGenerateStep('done'); setContent(r.content); setFramework(r.framework || framework); setTitleSuggestion(r.title || titleSuggestion); setTimeout(() => setProgressStep(-1), 3000) },
+      (e) => { setProgressStep(-1); setIsGenerating(false); setGenerateStep('awaiting_confirm'); setError(e || '生成失败') },
+    )
+  }, [topic, docType, keywords, framework, files, flavor])
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -246,7 +219,7 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
                   <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
                     className="px-6 py-1.5 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600">停止生成</button>
                 ) : (
-                  <button onClick={handleGenerate}
+                  <button onClick={handleGenerateFramework}
                     className="px-6 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
                     <Sparkles size={16} /> 生成公文
                   </button>
@@ -302,7 +275,7 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
               <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
                 className="px-5 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600">停止</button>
             ) : (
-              <button onClick={handleGenerate}
+              <button onClick={handleGenerateFramework}
                 className="px-5 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
                 <Sparkles size={16} /> 生成公文
               </button>
@@ -362,7 +335,22 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
 
         {/* Framework */}
         {framework.length > 0 && (
-          <FrameworkView framework={framework} titleSuggestion={titleSuggestion} />
+          <>
+            <FrameworkView framework={framework} titleSuggestion={titleSuggestion} />
+            {/* Confirm outline button (step writing mode) */}
+            {generateStep === 'awaiting_confirm' && (
+              <div className="flex items-center justify-center gap-3 my-6 animate-fade-in">
+                <button onClick={handleGenerateContent}
+                  className="px-8 py-3 bg-[#c8102e] text-white rounded-xl text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-lg">
+                  <Sparkles size={18} /> 确认大纲，开始撰写全文
+                </button>
+                <button onClick={() => handleGenerateFramework()}
+                  className="px-6 py-3 text-sm text-gray-500 hover:text-gray-700 underline">
+                  重新生成大纲
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Content result panel */}
@@ -390,7 +378,7 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
                     className="flex items-center gap-1 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-200 rounded transition">
                     <Download size={12} /> 导出
                   </button>
-                  <button onClick={handleGenerate}
+                  <button onClick={handleGenerateFramework}
                     className="flex items-center gap-1 px-2.5 py-1 text-xs text-[#c8102e] hover:bg-red-50 rounded transition">
                     <RotateCcw size={12} /> 重新生成
                   </button>
