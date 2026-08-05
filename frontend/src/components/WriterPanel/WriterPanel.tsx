@@ -319,15 +319,18 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
         {!isGenerating && !content && (
           <div className="mb-4 border border-amber-200 rounded-lg bg-amber-50 overflow-hidden">
             <button onClick={() => setShowGuide(!showGuide)}
-              className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-amber-800">
-              💡 使用指引 {showGuide ? '▲' : '▼'}
+              className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors rounded-t-lg">
+              <span>📖 使用指引</span>
+              <span className="text-xs text-amber-500">{showGuide ? '[收起 ▲]' : '[展开 ▼]'}</span>
             </button>
-            {showGuide && (
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              showGuide ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+            }`}>
               <div className="px-4 pb-3 text-xs text-amber-700 space-y-1 leading-relaxed">
                 <p><strong>1.</strong> 输入主题或点击上方「快捷指令」→ <strong>2.</strong> 调节AI风格 → <strong>3.</strong> 可选上传参考文件 → <strong>4.</strong> 点击「生成公文」→ <strong>5.</strong> 编辑修改后导出</p>
-                <p className="text-amber-500">提示：右侧面板会自动检索与您主题相关的权威资料。</p>
+                <p className="text-amber-500 mt-1">提示：右侧面板会自动检索与您主题相关的权威资料。</p>
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -458,7 +461,7 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
             <p className="text-sm font-medium text-gray-500">开始您的公文写作</p>
             <p className="text-xs text-gray-400 mt-1">点击上方「快捷指令」快速开始，或在上方输入写作主题后点击「生成公文」</p>
             <div className="mt-6 grid grid-cols-2 gap-2 text-xs text-gray-400 max-w-xs">
-              <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 支持24种文种自动识别</div>
+              <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 支持15种法定文种+9种常用文种</div>
               <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 权威知识库检索</div>
               <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> AI智能风格调节</div>
               <div className="flex items-start gap-1"><span className="text-green-500 mt-0.5">✓</span> 上传参考材料辅助写作</div>
