@@ -61,7 +61,7 @@ async def detect_doc_type(topic: str) -> dict:
     text = await generate_full(system_prompt="你是公文写作专家，请准确判断文种。", user_message=prompt)
     result = _parse_json_response(text)
     return {
-        "doc_type": result.get("doc_type", "通知"),
+        "doc_type": result.get("doc_type", "通用"),
         "reason": result.get("reason", ""),
     }
 
