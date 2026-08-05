@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, DragEvent } from 'react'
 import DocTypeSelector from './DocTypeSelector'
 import FrameworkView from './FrameworkView'
 import ContentView from './ContentView'
+import Dashboard from './Dashboard'
 import {
   generateFramework, generateContentStream, detectDocType, uploadReference,
   auditContent, exportWord,
@@ -428,6 +429,25 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
                 <ContentView content={content} isStreaming={isGenerating && generateStep === 'content'} />
               )}
             </div>
+          </div>
+        )}
+
+        {/* Dashboard — 文稿分析 */}
+        {content && !isGenerating && (
+          <div className="mb-4">
+            <Dashboard content={content} docType={docType} />
+          </div>
+        )}
+
+        {/* Step progress — 步骤模式进度 */}
+        {isGenerating && generateStep === 'content' && framework.length > 0 && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center gap-3">
+            <span className="text-sm text-blue-700 font-medium">
+              {progressStep >= 3 ? '📝 正在撰写正文...' : '🔍 正在组织素材...'}
+            </span>
+            <span className="text-xs text-blue-500">
+              {framework.length > 0 && `大纲共 ${framework.length} 章，正在逐章生成`}
+            </span>
           </div>
         )}
 
