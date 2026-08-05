@@ -89,6 +89,8 @@ async def generate_content_stream(
         knowledge_context=knowledge_context,
         custom_instructions=custom_instructions,
     )
+    # 注入用户风格画像（Writer's Loop "Learn" 阶段的应用端）
+    user_message = inject_style_prompt(user_id, user_message)
 
     yield {"type": "status", "data": "正在生成..."}
 
@@ -157,7 +159,7 @@ def save_document(
     framework: list,
     content: str,
 ) -> str:
-    """保存文稿到数据库，返回文档ID。同时学习用户写作风格。"""
+    """保存文稿到数据库，同时触发样式学习"""
     db = SessionLocal()
     try:
         doc = Document(
@@ -173,17 +175,52 @@ def save_document(
         db.commit()
         db.refresh(doc)
 
-        # 样式学习：从用户确认的文稿中提取特征
+        # 样式学习：记录用户确认的文稿
         try:
-            from .style_service import extract_style_features, save_style
-            features = extract_style_features(content, title)
-            save_style(user_id, features)
+            from .style_service import diff_and_learn
+            # 当前只记录最终确认的文稿特征作为基线
+            # 后续用户编辑时，通过 /api/style/learn 做差分学习
+            from .style_service import WritingStyle
+            from ..database import SessionLocal as SL
+            sdb = SL()
+            style = sdb.query(WritingStyle).filter(WritingStyle.user_id == user_id).first()
+            if style is None:
+                _record_baseline(user_id, content)
+            sdb.close()
         except Exception:
-            pass  # 样式学习失败不影响主要功能
+            pass
 
         return doc.id
     finally:
         db.close()
+
+
+def _record_baseline(user_id: str, content: str):
+    """记录用户首次确认的文稿作为风格基线"""
+    from .style_service import WritingStyle
+    from ..database import SessionLocal as SL
+    sdb = SL()
+    try:
+        style = sdb.query(WritingStyle).filter(WritingStyle.user_id == user_id).first()
+        if not style:
+            style = WritingStyle(user_id=user_id, sample_count=1)
+            style.length_prefs = json.dumps({"after": len(content)}, ensure_ascii=False)
+            sdb.add(style)
+            sdb.commit()
+    finally:
+        sdb.close()
+
+
+def inject_style_prompt(user_id: str, base_prompt: str) -> str:
+    """注入用户风格偏好的提示词"""
+    try:
+        from .style_service import build_style_prompt
+        style_instructions = build_style_prompt(user_id)
+        if style_instructions:
+            return base_prompt + "\n" + style_instructions
+    except Exception:
+        pass
+    return base_prompt
 
 
 def _format_knowledge_context(results: list) -> str:
