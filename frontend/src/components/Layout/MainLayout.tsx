@@ -4,6 +4,7 @@ import HistoryPanel from '../WriterPanel/HistoryPanel'
 import ReferencePanel from '../ReferencePanel/ReferencePanel'
 import QuickCommands from '../WriterPanel/QuickCommands'
 import OnboardingGuide from './OnboardingGuide'
+import BrandBanner from './BrandBanner'
 import { PenLine, User, LogOut, Clock, FileText, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 interface Props { username: string; onLogout: () => void }
@@ -53,6 +54,8 @@ export default function MainLayout({ username, onLogout }: Props) {
           <button onClick={onLogout} className="hover:text-white ml-1"><LogOut size={13} /></button>
         </div>
       </header>
+
+      <BrandBanner username={username} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left: My Documents (hidden on mobile) */}
