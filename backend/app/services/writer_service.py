@@ -92,6 +92,18 @@ async def generate_content_stream(
     # 注入用户风格画像（Writer's Loop "Learn" 阶段的应用端）
     user_message = inject_style_prompt(user_id, user_message)
 
+    # 根据AI风格档位注入去AI味指令
+    flavor = ""
+    if custom_instructions and "AI风格" in custom_instructions:
+        if "自然" in custom_instructions or "natural" in custom_instructions:
+            flavor = "natural"
+        elif "官方" in custom_instructions or "official" in custom_instructions:
+            flavor = "official"
+        else:
+            flavor = "standard"
+
+    from ..services.deai_service import deai_transform
+
     yield {"type": "status", "data": "正在生成..."}
 
     # 选择风格对应的系统提示词

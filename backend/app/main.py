@@ -14,6 +14,7 @@ from .api.documents import router as documents_router
 from .api.auth import router as auth_router
 from .api.materials import router as materials_router
 from .api.style_api import router as style_router
+from .api.deai_api import router as deai_router
 
 
 @asynccontextmanager
@@ -56,6 +57,7 @@ app.include_router(knowledge_router)
 app.include_router(documents_router)
 app.include_router(materials_router)
 app.include_router(style_router)
+app.include_router(deai_router)
 
 
 @app.get("/")
