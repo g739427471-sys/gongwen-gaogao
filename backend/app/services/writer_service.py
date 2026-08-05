@@ -157,7 +157,7 @@ def save_document(
     framework: list,
     content: str,
 ) -> str:
-    """保存文稿到数据库，返回文档ID"""
+    """保存文稿到数据库，返回文档ID。同时学习用户写作风格。"""
     db = SessionLocal()
     try:
         doc = Document(
@@ -172,6 +172,15 @@ def save_document(
         db.add(doc)
         db.commit()
         db.refresh(doc)
+
+        # 样式学习：从用户确认的文稿中提取特征
+        try:
+            from .style_service import extract_style_features, save_style
+            features = extract_style_features(content, title)
+            save_style(user_id, features)
+        except Exception:
+            pass  # 样式学习失败不影响主要功能
+
         return doc.id
     finally:
         db.close()

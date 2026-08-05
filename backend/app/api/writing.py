@@ -121,6 +121,24 @@ async def api_refine(
         raise HTTPException(status_code=500, detail=f"润色失败：{str(e)}")
 
 
+@router.post("/enhanced-refine")
+async def api_enhanced_refine(
+    req: RefineRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """增强润色：文风一致性+术语规范+逻辑连贯+精简度"""
+    from ..services.audit_service import enhanced_refine
+    try:
+        result = await enhanced_refine(req.content, req.doc_type)
+        # 学习用户风格
+        from ..services.style_service import extract_style_features, save_style
+        features = extract_style_features(result.get("refined_content", req.content))
+        save_style(user_id, features)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"增强润色失败：{str(e)}")
+
+
 @router.post("/upload-reference")
 async def api_upload_reference(
     file: UploadFile = File(...),

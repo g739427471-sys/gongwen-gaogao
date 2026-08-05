@@ -1,4 +1,4 @@
-"""
+﻿"""
 公文高高 — 智能公文写作辅助工具 Backend
 FastAPI 应用入口。
 """
@@ -13,6 +13,7 @@ from .api.knowledge import router as knowledge_router
 from .api.documents import router as documents_router
 from .api.auth import router as auth_router
 from .api.materials import router as materials_router
+from .api.style_api import router as style_router
 
 
 @asynccontextmanager
@@ -54,6 +55,7 @@ app.include_router(writing_router)
 app.include_router(knowledge_router)
 app.include_router(documents_router)
 app.include_router(materials_router)
+app.include_router(style_router)
 
 
 @app.get("/")
