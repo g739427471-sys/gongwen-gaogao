@@ -7,6 +7,7 @@ import OnboardingGuide from './OnboardingGuide'
 import BrandBanner from './BrandBanner'
 import UpdateLog from './UpdateLog'
 import UpdateEntry from '../Admin/UpdateEntry'
+import DocSidebar from './DocSidebar'
 import { PenLine, User, LogOut, Clock, FileText, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 interface Props { username: string; onLogout: () => void }
@@ -21,6 +22,7 @@ export default function MainLayout({ username, onLogout }: Props) {
   const [autoSearch, setAutoSearch] = useState('')
   const [adminClicks, setAdminClicks] = useState(0)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [totalDocs, setTotalDocs] = useState(0)
 
   useEffect(() => {
     const seen = localStorage.getItem('gongwen_onboarded')
@@ -47,14 +49,16 @@ export default function MainLayout({ username, onLogout }: Props) {
             <button onClick={() => setActiveTab('write')}
               className={`px-2.5 py-1 rounded text-xs font-medium ${activeTab === 'write' ? 'bg-white/20' : 'text-white/60 hover:text-white'}`}>写作</button>
             <button onClick={() => setActiveTab('history')}
-              className={`px-2.5 py-1 rounded text-xs font-medium ${activeTab === 'history' ? 'bg-white/20' : 'text-white/60 hover:text-white'}`}>历史</button>
+              className={`px-2.5 py-1 rounded text-xs font-medium ${activeTab === 'history' ? 'bg-white/20' : 'text-white/60 hover:text-white'}`}>历史 ({totalDocs})</button>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-white/70">
           <button onClick={() => setRightOpen(!rightOpen)} className="hover:text-white p-1 xl:hidden" title="知识面板">
             {rightOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
           </button>
-          <User size={13} /> {username}
+          <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-medium cursor-default" title="个人中心">
+            {username[0]?.toUpperCase()}
+          </div>
           <button onClick={onLogout} className="hover:text-white ml-1"><LogOut size={13} /></button>
         </div>
       </header>
@@ -64,8 +68,15 @@ export default function MainLayout({ username, onLogout }: Props) {
       <div className="flex-1 flex overflow-hidden">
         {/* Left: My Documents (hidden on mobile) */}
         {leftOpen && (
-          <div className="hidden md:block w-[20%] min-w-[180px] bg-white border-r border-gray-200 overflow-y-auto shrink-0">
-            <DocumentMiniList onSelect={() => setActiveTab('history')} activeTab={activeTab} />
+          <div className="hidden md:flex md:flex-col w-[20%] min-w-[180px] max-w-[240px] bg-white border-r border-gray-200 shrink-0">
+            <DocSidebar
+              activeTab={activeTab}
+              onSelectDoc={() => setActiveTab('history')}
+              onNewDoc={() => { setActiveTab('write') }}
+              onHistory={() => setActiveTab('history')}
+              totalDocs={totalDocs}
+              setTotalDocs={setTotalDocs}
+            />
           </div>
         )}
 
@@ -120,32 +131,3 @@ export default function MainLayout({ username, onLogout }: Props) {
   )
 }
 
-// Mini document list for left sidebar
-import { listDocuments } from '../../services/api'
-import type { DocumentItem } from '../../types'
-
-function DocumentMiniList({ onSelect, activeTab }: { onSelect: () => void; activeTab: string }) {
-  const [docs, setDocs] = useState<DocumentItem[]>([])
-  useEffect(() => {
-    listDocuments({ limit: 8 }).then(r => setDocs(r.documents)).catch(() => {})
-    const t = setInterval(() => { listDocuments({ limit: 8 }).then(r => setDocs(r.documents)).catch(() => {}) }, 30000)
-    return () => clearInterval(t)
-  }, [activeTab])
-
-  return (
-    <div className="p-2">
-      <h3 className="text-[10px] font-bold text-gray-400 uppercase px-2 py-2 flex items-center gap-1"><FileText size={10} />我的文档</h3>
-      {docs.length === 0 && <p className="text-[10px] text-gray-400 text-center py-8">暂无文档</p>}
-      {docs.map(doc => (
-        <div key={doc.id} onClick={onSelect} className="p-2 rounded hover:bg-gray-50 cursor-pointer mb-0.5">
-          <p className="text-[11px] font-medium text-gray-700 truncate">{doc.title || '未命名'}</p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[9px] bg-gray-100 px-1 rounded">{doc.doc_type}</span>
-            <span className="text-[9px] text-gray-400">{doc.created_at ? new Date(doc.created_at).toLocaleDateString('zh-CN') : ''}</span>
-          </div>
-        </div>
-      ))}
-      <button onClick={onSelect} className="w-full mt-2 text-[10px] text-[#c8102e] hover:underline py-1">查看全部 →</button>
-    </div>
-  )
-}
