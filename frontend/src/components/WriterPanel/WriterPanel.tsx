@@ -9,7 +9,7 @@ import {
 import type { OutlineItem, GenerationComplete } from '../../types'
 import {
   Sparkles, Copy, Check, Upload, X, FileText, Sliders, Search, BookOpen, PenTool,
-  ChevronDown, ChevronUp, RotateCcw, Download, Edit3, Eye
+  ChevronDown, ChevronUp, RotateCcw, Download, Edit3, Eye, Save
 } from 'lucide-react'
 
 interface Props {
@@ -56,6 +56,7 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
   const [editMode, setEditMode] = useState(false)
   const [editedContent, setEditedContent] = useState('')
   const [showGuide, setShowGuide] = useState(false)
+  const [learnMsg, setLearnMsg] = useState('')
   const [auditing, setAuditing] = useState(false)
   const [auditResult, setAuditResult] = useState<any>(null)
   const [exporting, setExporting] = useState(false)
@@ -111,6 +112,29 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
 
   // Trigger auto-search on right panel
   const triggerAutoSearch = (q: string) => { onAutoSearch?.(q) }
+
+  // Style learning — trigger when user finishes editing
+  const handleSaveEdit = async () => {
+    const original = content
+    const edited = editedContent
+    if (!original || !edited || original === edited) { setEditMode(false); return }
+    try {
+      const { getToken } = await import('../../services/api')
+      const token = getToken()
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || '/api'}/style/learn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ original_content: original, edited_content: edited }),
+      })
+      const data = await res.json()
+      if (data.status === 'learned') {
+        setLearnMsg(`📝 已学习您本次的编辑偏好`)
+        setTimeout(() => setLearnMsg(''), 4000)
+      }
+    } catch { /* 学习失败不影响主流程 */ }
+    setEditMode(false)
+    setContent(edited)
+  }
 
   // Audit
   const handleAudit = async () => {
@@ -363,12 +387,12 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
               </h3>
               {!isGenerating && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => { setEditMode(!editMode); if (!editMode) setEditedContent(content) }}
+                  <button onClick={() => { if (editMode) { handleSaveEdit() } else { setEditedContent(content); setEditMode(true) } }}
                     className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded transition ${
                       editMode ? 'bg-[#c8102e] text-white' : 'text-gray-500 hover:bg-gray-200'
                     }`}>
-                    {editMode ? <Eye size={12} /> : <Edit3 size={12} />}
-                    {editMode ? '预览' : '编辑'}
+                    {editMode ? <Save size={12} /> : <Edit3 size={12} />}
+                    {editMode ? '保存修改' : '编辑'}
                   </button>
                   <button onClick={async () => { await navigator.clipboard.writeText(editMode ? editedContent : content); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
                     className="flex items-center gap-1 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-200 rounded transition">
