@@ -35,7 +35,8 @@ export default function BrandBanner({ username }: Props) {
   const [activeTag, setActiveTag] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/secretary/status', { headers: authHeader() })
+    const apiUrl = (import.meta as any).env?.VITE_API_BASE || '/api'
+    fetch(`${apiUrl}/secretary/status`, { headers: authHeader() })
       .then(r => r.json()).then(setStatus).catch(() => {})
   }, [])
 
@@ -126,9 +127,6 @@ export default function BrandBanner({ username }: Props) {
 }
 
 function authHeader(): Record<string, string> {
-  try {
-    const u = JSON.parse(localStorage.getItem('user') || '{}')
-    const token = localStorage.getItem('gongwen_token') || u.token || ''
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  } catch { return {} }
+  const token = localStorage.getItem('token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
