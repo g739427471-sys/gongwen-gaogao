@@ -67,11 +67,49 @@ _init_default_news()
 @router.get("/news")
 async def api_get_news(page: int = 1, page_size: int = 10):
     """获取近期简讯（支持分页，超12小时自动触发后台更新）"""
-    # 检查是否需要后台更新
+    # 后台更新（异步，不阻塞）
     if should_refresh():
-        asyncio.create_task(refresh_news())
+        import asyncio
+        try:
+            asyncio.create_task(refresh_news())
+        except Exception:
+            pass
 
-    return get_news_from_db(page, page_size)
+    # 直接使用 SQLAlchemy engine 避免 ORM session 阻塞问题
+    from ..database import engine
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM news_items")).scalar()
+            start = (page - 1) * page_size
+            rows = conn.execute(
+                text("SELECT id, title, source, url, date, snippet FROM news_items ORDER BY date DESC LIMIT :limit OFFSET :offset"),
+                {"limit": page_size, "offset": start}
+            ).fetchall()
+            news = [{"id": r[0], "title": r[1], "source": r[2], "url": r[3], "date": r[4], "snippet": r[5]} for r in rows]
+            conn.commit()
+        from ..services.news_service import _last_update
+        return {
+            "news": news,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "last_update": _last_update.isoformat() if _last_update else None,
+        }
+    except Exception as e:
+        # 数据库查询失败时返回静态默认数据
+        from ..services.news_service import DEFAULT_NEWS
+        total = len(DEFAULT_NEWS)
+        start = (page - 1) * page_size
+        return {
+            "news": DEFAULT_NEWS[start:start + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "last_update": None,
+        }
 
 
 @router.post("/news/refresh")
