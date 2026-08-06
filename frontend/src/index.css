@@ -75,3 +75,133 @@ body {
 
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ===== 知识库面板折叠功能样式 ===== */
+
+/* 右侧面板过渡动画 */
+.kb-right-panel {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  overflow: hidden !important;
+}
+
+/* 竖排文字 */
+.writing-vertical-rl {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* 竖排按钮悬停 tooltip */
+.kb-tooltip-trigger {
+  position: relative;
+}
+.kb-tooltip-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1f2937;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 200;
+  writing-mode: horizontal-tb;
+}
+.kb-tooltip-trigger:hover::after {
+  opacity: 1;
+}
+
+/* 写作区过渡 */
+.kb-writing-area {
+  transition: flex 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* 移动端浮动按钮 */
+.kb-float-btn {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 47;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #c8102e;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(200, 16, 46, 0.35);
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease, background 0.3s ease;
+}
+.kb-float-btn:hover {
+  background: #a00d25;
+  transform: scale(1.05);
+}
+.kb-float-btn:active {
+  transform: scale(0.95);
+}
+
+/* 移动端遮罩 */
+.kb-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.kb-overlay.show {
+  opacity: 1;
+}
+
+/* 移动端滑出面板 */
+.kb-mobile-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 49;
+  width: 85%;
+  max-width: 400px;
+  background: #fff;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.kb-mobile-panel.show {
+  transform: translateX(0);
+}
+
+/* 响应式：<768px 显示浮动按钮 */
+@media (max-width: 767px) {
+  .kb-float-btn {
+    display: flex;
+  }
+}
+
+/* 响应式：>=768px 始终隐藏浮动按钮和移动面板 */
+@media (min-width: 768px) {
+  .kb-float-btn {
+    display: none !important;
+  }
+  .kb-overlay.show {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .kb-mobile-panel.show {
+    transform: translateX(100%);
+  }
+}

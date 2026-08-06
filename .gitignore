@@ -29,3 +29,11 @@ dist/
 .DS_Store
 Thumbs.db
 ~$*
+
+# Deploy clones (不要提交部署仓库的本地克隆)
+voice-reminder/
+trae-deploy/
+
+# Docs
+*.doc
+*.docx
