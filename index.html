@@ -5,10 +5,584 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>公文高高 - 智能公文写作辅助工具</title>
     <link rel="icon" type="image/svg+xml" href="/gongwen-gaogao/favicon.svg" />
-    <script type="module" crossorigin src="/gongwen-gaogao/assets/index-BV8y4esG.js"></script>
-    <link rel="stylesheet" crossorigin href="/gongwen-gaogao/assets/index-QplfPsuP.css">
+    <script type="module" crossorigin src="/gongwen-gaogao/assets/index-BjA-QWsZ.js"></script>
+    <link rel="stylesheet" crossorigin href="/gongwen-gaogao/assets/index-BYz8QcCH.css">
+
+    <style id="kb-styles">
+      :root {
+        --kb-collapsed-w: 48px;
+        --kb-duration: 0.3s;
+        --kb-ease: cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      /* ========== 桌面知识库面板过渡动画 ========== */
+      .kb-panel-desktop {
+        transition: width var(--kb-duration) var(--kb-ease),
+                    min-width var(--kb-duration) var(--kb-ease),
+                    max-width var(--kb-duration) var(--kb-ease) !important;
+        overflow: hidden !important;
+        position: relative !important;
+      }
+
+      .kb-panel-desktop.kb-state-collapsed {
+        width: var(--kb-collapsed-w) !important;
+        min-width: var(--kb-collapsed-w) !important;
+        max-width: var(--kb-collapsed-w) !important;
+        padding: 0 !important;
+      }
+
+      /* 折叠时隐藏面板内所有非header元素 */
+      .kb-panel-desktop.kb-state-collapsed > :not(.kb-hdr) {
+        display: none !important;
+      }
+
+      /* 768-1279px: 强制显示桌面面板(覆盖React的 hidden xl:block，xl=1280px) */
+      @media (min-width: 768px) and (max-width: 1279px) {
+        .kb-panel-desktop.kb-force-show {
+          display: block !important;
+        }
+      }
+
+      /* ========== 折叠头部容器 ========== */
+      .kb-hdr {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        transition: all var(--kb-duration) var(--kb-ease);
+      }
+      .kb-panel-desktop:not(.kb-state-collapsed) > .kb-hdr {
+        flex-direction: row;
+        padding: 8px 12px;
+        border-bottom: 1px solid #f3f4f6;
+      }
+      .kb-panel-desktop.kb-state-collapsed > .kb-hdr {
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 10px 4px;
+        height: 100%;
+        gap: 12px;
+      }
+
+      /* 水平 ◀ 收起 按钮 */
+      .kb-btn-h {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 30px;
+        padding: 0 10px;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+      }
+      .kb-btn-h:hover { background: #e5e7eb; color: #1f2937; }
+      .kb-btn-h .kb-arw {
+        display: inline-block;
+        transition: transform var(--kb-duration) var(--kb-ease);
+        font-size: 10px;
+      }
+
+      /* 竖排 ▶ 展开 按钮（折叠态显示） */
+      .kb-btn-v {
+        display: none;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 8px;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #6b7280;
+        letter-spacing: 2px;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+        position: relative;
+      }
+      .kb-btn-v:hover { background: #e5e7eb; color: #1f2937; }
+      .kb-panel-desktop.kb-state-collapsed .kb-btn-v { display: flex; }
+
+      /* Tooltip - 悬停提示 */
+      .kb-btn-v::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: calc(100% + 8px);
+        top: 50%;
+        transform: translateY(-50%);
+        background: #1f2937;
+        color: #fff;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        z-index: 200;
+        writing-mode: horizontal-tb;
+        letter-spacing: normal;
+      }
+      .kb-btn-v:hover::after { opacity: 1; }
+
+      /* ========== 写作区过渡 ========== */
+      .kb-writing-area {
+        transition: flex var(--kb-duration) var(--kb-ease) !important;
+      }
+
+      /* ========== 移动端浮动按钮 ========== */
+      .kb-float {
+        display: none;
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 47;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        background: #c8102e;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(200,16,46,0.35);
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.3s ease, background 0.3s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .kb-float:hover { background: #a00d25; transform: scale(1.05); }
+      .kb-float:active { transform: scale(0.95); }
+      @media (max-width: 767px) { .kb-float { display: flex; } }
+
+      /* ========== 移动端遮罩 ========== */
+      .kb-mask {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 38;
+        background: rgba(0,0,0,0.45);
+        opacity: 0;
+        transition: opacity var(--kb-duration) var(--kb-ease);
+        -webkit-tap-highlight-color: transparent;
+      }
+      .kb-mask.kb-show { opacity: 1; }
+
+      /* ========== 隐藏React原生移动面板(<768px，用我们的浮动按钮管理) ========== */
+      @media (max-width: 767px) {
+        div[class*="xl:hidden"][class*="fixed"][class*="inset-y-0"][class*="right-0"][class*="z-40"][class*="bg-white"][class*="shadow-2xl"] {
+          display: none !important;
+        }
+      }
+    </style>
   </head>
   <body class="bg-gray-50 text-gray-900">
     <div id="root"></div>
+
+    <script>
+      (function() {
+        'use strict';
+
+        var KEY = 'gongwen_kb_collapsed';
+        var BP_AUTO = 1200;
+        var BP_MOBILE = 768;
+
+        var manualCollapsed = localStorage.getItem(KEY) === 'true';
+        var autoCollapsed = false;
+        var desktopPanel = null;
+        var hdr = null;
+        var btnH = null;
+        var btnV = null;
+        var writingArea = null;
+        var floatBtn = null;
+        var maskEl = null;
+        var reactToggleBtn = null;
+        var reactMobilePanel = null;
+
+        function save() { localStorage.setItem(KEY, manualCollapsed.toString()); }
+        function collapsed() { return manualCollapsed || autoCollapsed; }
+
+        function apply() {
+          if (!desktopPanel) return;
+          if (collapsed()) {
+            desktopPanel.classList.add('kb-state-collapsed');
+          } else {
+            desktopPanel.classList.remove('kb-state-collapsed');
+          }
+          updateBtns();
+        }
+
+        function collapse() { manualCollapsed = true; save(); apply(); }
+        function expand() { manualCollapsed = false; save(); apply(); }
+        function toggle() { manualCollapsed ? expand() : collapse(); }
+
+        function updateBtns() {
+          if (!btnH || !btnV) return;
+          if (collapsed()) {
+            btnH.style.display = 'none';
+            btnV.style.display = 'flex';
+            btnH.querySelector('.kb-arw').style.transform = 'rotate(180deg)';
+          } else {
+            btnH.style.display = 'flex';
+            btnV.style.display = 'none';
+            btnH.querySelector('.kb-arw').style.transform = 'rotate(0deg)';
+          }
+        }
+
+        // ==================== 移动端 ====================
+
+        function createMobileUI() {
+          floatBtn = document.createElement('button');
+          floatBtn.className = 'kb-float';
+          floatBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+          floatBtn.title = '打开知识库面板';
+          floatBtn.addEventListener('click', openMobile);
+          document.body.appendChild(floatBtn);
+
+          maskEl = document.createElement('div');
+          maskEl.className = 'kb-mask';
+          maskEl.addEventListener('click', closeMobile);
+          document.body.appendChild(maskEl);
+        }
+
+        function findReactMobileElements() {
+          if (!reactToggleBtn) {
+            var btns = document.querySelectorAll('button');
+            for (var i = 0; i < btns.length; i++) {
+              if (btns[i].getAttribute('title') === '知识面板') {
+                reactToggleBtn = btns[i];
+                break;
+              }
+            }
+          }
+          if (!reactMobilePanel) {
+            var divs = document.querySelectorAll('div');
+            for (var j = 0; j < divs.length; j++) {
+              var cls = divs[j].className || '';
+              if (typeof cls === 'string' &&
+                  cls.indexOf('xl:hidden') !== -1 &&
+                  cls.indexOf('z-40') !== -1 &&
+                  cls.indexOf('shadow-2xl') !== -1) {
+                reactMobilePanel = divs[j];
+                break;
+              }
+            }
+          }
+        }
+
+        function openMobile() {
+          findReactMobileElements();
+
+          // 先点击React切换按钮打开面板（让React渲染内容）
+          if (reactToggleBtn) {
+            var svg = reactToggleBtn.querySelector('svg');
+            var isOpen = svg && svg.innerHTML.indexOf('line') !== -1;
+            if (!isOpen) {
+              reactToggleBtn.click();
+            }
+          }
+
+          // 短暂延迟等React渲染完成后再显示面板
+          setTimeout(function() {
+            maskEl.style.display = 'block';
+            void maskEl.offsetWidth;
+            maskEl.classList.add('kb-show');
+            document.body.style.overflow = 'hidden';
+
+            if (reactMobilePanel) {
+              reactMobilePanel.style.setProperty('display', 'flex', 'important');
+              reactMobilePanel.style.flexDirection = 'column';
+
+              // 监听React面板内的关闭按钮（用户可能点React自己的关闭）
+              watchMobilePanelClose();
+            }
+
+            floatBtn.style.display = 'none';
+          }, 60);
+        }
+
+        var _mobilePanelObserver = null;
+        function watchMobilePanelClose() {
+          if (_mobilePanelObserver) _mobilePanelObserver.disconnect();
+          if (!reactMobilePanel) return;
+
+          _mobilePanelObserver = new MutationObserver(function(mutations) {
+            // React面板内容被移除 = 用户点击了React的关闭按钮
+            for (var i = 0; i < mutations.length; i++) {
+              var m = mutations[i];
+              if (m.type === 'childList' && m.removedNodes.length > 0) {
+                // 延迟检查(等React完成渲染)
+                setTimeout(function() {
+                  // 检查面板是否还处于打开状态
+                  if (reactToggleBtn) {
+                    var svg = reactToggleBtn.querySelector('svg');
+                    var stillOpen = svg && svg.innerHTML.indexOf('line') !== -1;
+                    if (!stillOpen && maskEl.classList.contains('kb-show')) {
+                      // React面板已关闭，同步隐藏overlay
+                      maskEl.classList.remove('kb-show');
+                      document.body.style.overflow = '';
+                      if (reactMobilePanel) {
+                        reactMobilePanel.style.setProperty('display', 'none', 'important');
+                      }
+                      floatBtn.style.display = 'flex';
+                      setTimeout(function() {
+                        if (!maskEl.classList.contains('kb-show')) maskEl.style.display = 'none';
+                      }, 300);
+                    }
+                  }
+                }, 50);
+                break;
+              }
+            }
+          });
+          _mobilePanelObserver.observe(reactMobilePanel, { childList: true, subtree: true });
+        }
+
+        function closeMobile() {
+          // 断开MutationObserver
+          if (_mobilePanelObserver) {
+            _mobilePanelObserver.disconnect();
+            _mobilePanelObserver = null;
+          }
+
+          maskEl.classList.remove('kb-show');
+          document.body.style.overflow = '';
+
+          // 隐藏React移动面板
+          if (reactMobilePanel) {
+            reactMobilePanel.style.setProperty('display', 'none', 'important');
+          }
+
+          // 如果面板是打开状态，点击切换按钮关闭
+          if (reactToggleBtn) {
+            var svg = reactToggleBtn.querySelector('svg');
+            var isOpen = svg && svg.innerHTML.indexOf('line') !== -1;
+            if (isOpen) {
+              reactToggleBtn.click();
+            }
+          }
+
+          floatBtn.style.display = 'flex';
+
+          setTimeout(function() {
+            if (!maskEl.classList.contains('kb-show')) {
+              maskEl.style.display = 'none';
+            }
+          }, 300);
+        }
+
+        // ==================== 桌面面板 ====================
+
+        function createHeader() {
+          if (!desktopPanel || hdr) return;
+
+          hdr = document.createElement('div');
+          hdr.className = 'kb-hdr';
+
+          btnH = document.createElement('button');
+          btnH.className = 'kb-btn-h';
+          btnH.innerHTML = '<span class="kb-arw">◀</span> 收起';
+          btnH.title = '收起知识库面板';
+          btnH.addEventListener('click', function(e) { e.stopPropagation(); toggle(); });
+
+          btnV = document.createElement('button');
+          btnV.className = 'kb-btn-v';
+          btnV.setAttribute('data-tip', '点击展开知识库');
+          btnV.textContent = '展开面板';
+          btnV.title = '点击展开知识库';
+          btnV.addEventListener('click', function(e) { e.stopPropagation(); expand(); });
+
+          hdr.appendChild(btnH);
+          hdr.appendChild(btnV);
+          desktopPanel.insertBefore(hdr, desktopPanel.firstChild);
+        }
+
+        function findDesktopPanel() {
+          if (desktopPanel) return true;
+
+          console.log('[公文高高] 正在查找知识库面板...');
+          var divs = document.querySelectorAll('div');
+          var candidates = [];
+
+          for (var i = 0; i < divs.length; i++) {
+            var d = divs[i];
+            var cls = d.className || '';
+            if (typeof cls !== 'string') continue;
+
+            // 策略1: 完整匹配桌面面板特征类
+            if (cls.indexOf('xl:block') !== -1 &&
+                cls.indexOf('w-[25%]') !== -1 &&
+                cls.indexOf('min-w-[') !== -1 &&
+                cls.indexOf('border-l') !== -1 &&
+                cls.indexOf('bg-white') !== -1 &&
+                cls.indexOf('shrink-0') !== -1) {
+
+              var txt = d.textContent || '';
+              console.log('[公文高高] 找到候选面板:', d.tagName, '内容:', txt.substring(0, 80));
+              if (txt.indexOf('知识检索') !== -1 ||
+                  txt.indexOf('写作心法') !== -1 ||
+                  txt.indexOf('时政简讯') !== -1 ||
+                  txt.indexOf('知识') !== -1) {
+                desktopPanel = d;
+                console.log('[公文高高] ✓ 桌面知识库面板已找到');
+                return true;
+              }
+              candidates.push(d);
+            }
+          }
+
+          // 策略2: 如果策略1没找到，尝试更宽松的匹配
+          if (!desktopPanel && candidates.length > 0) {
+            console.log('[公文高高] 策略1未匹配内容，尝试候选面板数量:', candidates.length);
+            for (var k = 0; k < candidates.length; k++) {
+              var c = candidates[k];
+              if (c.children.length > 0 && c.offsetParent !== null) {
+                desktopPanel = c;
+                console.log('[公文高高] ✓ 通过策略2找到面板');
+                return true;
+              }
+            }
+          }
+
+          // 策略3: 通过width属性和border-l特征查找
+          if (!desktopPanel) {
+            for (var j = 0; j < divs.length; j++) {
+              var d2 = divs[j];
+              var cls2 = d2.className || '';
+              if (typeof cls2 !== 'string') continue;
+              if (cls2.indexOf('xl:block') !== -1 && cls2.indexOf('border-l') !== -1 && cls2.indexOf('shrink-0') !== -1) {
+                console.log('[公文高高] 策略3找到候选:', cls2.substring(0, 80));
+                var txt2 = d2.textContent || '';
+                if (txt2.length > 10) { // 有内容的非空面板
+                  desktopPanel = d2;
+                  console.log('[公文高高] ✓ 通过策略3找到面板');
+                  return true;
+                }
+              }
+            }
+          }
+
+          console.log('[公文高高] ✗ 未找到知识库面板，div总数:', divs.length);
+          return false;
+        }
+
+        function findWritingArea() {
+          if (!desktopPanel || writingArea) return;
+          var parent = desktopPanel.parentElement;
+          if (!parent) return;
+
+          var children = parent.children;
+          for (var i = 0; i < children.length; i++) {
+            var c = children[i];
+            if (c === desktopPanel) continue;
+            var cls = c.className || '';
+            if (typeof cls === 'string' && cls.indexOf('flex-1') !== -1) {
+              writingArea = c;
+              writingArea.classList.add('kb-writing-area');
+              return;
+            }
+          }
+        }
+
+        // ==================== 响应式 ====================
+
+        function handleResize() {
+          var w = window.innerWidth;
+
+          if (w < BP_AUTO) {
+            if (!autoCollapsed) { autoCollapsed = true; apply(); }
+          } else {
+            if (autoCollapsed) { autoCollapsed = false; apply(); }
+          }
+
+          if (desktopPanel) {
+            if (w >= BP_MOBILE && w < 1280) {
+              desktopPanel.classList.add('kb-force-show');
+            } else {
+              desktopPanel.classList.remove('kb-force-show');
+            }
+          }
+
+          if (floatBtn) {
+            floatBtn.style.display = w < BP_MOBILE ? 'flex' : 'none';
+          }
+
+          if (w >= BP_MOBILE) {
+            closeMobile();
+            // 清除移动面板上的内联样式，让CSS媒体查询重新接管
+            if (reactMobilePanel) {
+              reactMobilePanel.style.removeProperty('display');
+              reactMobilePanel.style.removeProperty('flex-direction');
+            }
+          }
+        }
+
+        var resizeTimer;
+        function onResize() {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(handleResize, 150);
+        }
+
+        // ==================== 初始化 ====================
+
+        function setup() {
+          if (!findDesktopPanel()) return;
+          desktopPanel.classList.add('kb-panel-desktop');
+          findWritingArea();
+          createHeader();
+          createMobileUI();
+          handleResize(); // 先计算响应式状态
+          apply();        // 再应用状态（避免闪烁）
+          console.log('[公文高高] 知识库面板折叠功能已就绪');
+        }
+
+        function init() {
+          console.log('[公文高高] 折叠功能脚本已加载 v1.0');
+
+          var root = document.getElementById('root');
+          if (!root) {
+            console.warn('[公文高高] ✗ 未找到 #root 元素!');
+            return;
+          }
+
+          var mo = new MutationObserver(function() {
+            if (!desktopPanel) setup();
+          });
+          mo.observe(root, { childList: true, subtree: true });
+
+          var tries = 0;
+          var timer = setInterval(function() {
+            if (!desktopPanel) setup();
+            tries++;
+            if (desktopPanel || tries >= 50) {
+              clearInterval(timer);
+              if (desktopPanel) {
+                handleResize();
+              } else {
+                console.warn('[公文高高] ✗ 50次重试后仍未找到知识库面板。请确认：');
+                console.warn('  1. 页面已完全加载（已登录并进入写作界面）');
+                console.warn('  2. 右侧知识库面板已渲染');
+                console.warn('  3. 访问的是本地文件（非GitHub Pages缓存版本）');
+              }
+            }
+          }, 200);
+
+          window.addEventListener('resize', onResize);
+          handleResize();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init);
+        } else {
+          init();
+        }
+      })();
+    </script>
   </body>
 </html>
