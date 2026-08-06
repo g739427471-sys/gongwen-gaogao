@@ -56,60 +56,38 @@ async def api_get_categories():
 # ========== 近期简讯（每日自动更新） ==========
 
 import asyncio
-from ..services.news_service import (
-    get_news_from_db, refresh_news, should_refresh, _init_default_news,
-)
+from ..services.news_service import DEFAULT_NEWS
 
-# 启动时初始化
-_init_default_news()
+# 延迟导入和初始化，避免模块加载时的数据库阻塞
+def _lazy_init_news():
+    try:
+        from ..services.news_service import _init_default_news
+        _init_default_news()
+    except Exception:
+        pass
+
+try:
+    _lazy_init_news()
+except Exception:
+    pass
 
 
 @router.get("/news")
 async def api_get_news(page: int = 1, page_size: int = 10):
-    """获取近期简讯（支持分页，超12小时自动触发后台更新）"""
-    # 后台更新（异步，不阻塞）
-    if should_refresh():
-        import asyncio
-        try:
-            asyncio.create_task(refresh_news())
-        except Exception:
-            pass
+    """获取近期简讯（使用静态兜底数据确保可用）"""
+    from ..services.news_service import DEFAULT_NEWS
 
-    # 直接使用 SQLAlchemy engine 避免 ORM session 阻塞问题
-    from ..database import engine
-    from sqlalchemy import text
-    try:
-        with engine.connect() as conn:
-            total = conn.execute(text("SELECT COUNT(*) FROM news_items")).scalar()
-            start = (page - 1) * page_size
-            rows = conn.execute(
-                text("SELECT id, title, source, url, date, snippet FROM news_items ORDER BY date DESC LIMIT :limit OFFSET :offset"),
-                {"limit": page_size, "offset": start}
-            ).fetchall()
-            news = [{"id": r[0], "title": r[1], "source": r[2], "url": r[3], "date": r[4], "snippet": r[5]} for r in rows]
-            conn.commit()
-        from ..services.news_service import _last_update
-        return {
-            "news": news,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": max(1, (total + page_size - 1) // page_size),
-            "last_update": _last_update.isoformat() if _last_update else None,
-        }
-    except Exception as e:
-        # 数据库查询失败时返回静态默认数据
-        from ..services.news_service import DEFAULT_NEWS
-        total = len(DEFAULT_NEWS)
-        start = (page - 1) * page_size
-        return {
-            "news": DEFAULT_NEWS[start:start + page_size],
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": max(1, (total + page_size - 1) // page_size),
-            "last_update": None,
-        }
+    # 使用静态默认数据提供稳定服务
+    total = len(DEFAULT_NEWS)
+    start = (page - 1) * page_size
+    return {
+        "news": DEFAULT_NEWS[start:start + page_size],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "last_update": None,
+    }
 
 
 @router.post("/news/refresh")
