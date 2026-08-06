@@ -151,6 +151,12 @@ export function generateContentStream(
   const controller = new AbortController()
   const token = getToken()
 
+  // 120秒超时保护（AI生成可能较慢）
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+    onError('请求超时，请检查网络后重试')
+  }, 120000)
+
   fetch(`${API_BASE}/writing/generate-content`, {
     method: 'POST',
     headers: {
@@ -195,16 +201,21 @@ export function generateContentStream(
             const data = line.slice(6)
             try {
               const parsed = JSON.parse(data)
-              if (eventType === 'content_delta') onDelta(parsed.text || '')
-              else if (eventType === 'complete') onComplete(parsed as GenerationComplete)
-              else if (eventType === 'error') onError(parsed.error || '生成错误')
+              if (eventType === 'connected') { /* 连接确认，清除超时 */ clearTimeout(timeoutId) }
+              else if (eventType === 'content_delta') onDelta(parsed.text || '')
+              else if (eventType === 'complete') { clearTimeout(timeoutId); onComplete(parsed as GenerationComplete) }
+              else if (eventType === 'error') { clearTimeout(timeoutId); onError(parsed.error || '生成错误') }
             } catch { /* ignore */ }
           }
         }
       }
     })
     .catch((err) => {
-      if (err.name === 'AbortError') return
+      clearTimeout(timeoutId)
+      if (err.name === 'AbortError') {
+        onError('请求超时或已取消，请重试')
+        return
+      }
       if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
         onError('无法连接服务器，请确认后端服务已启动并刷新页面重试')
       } else {

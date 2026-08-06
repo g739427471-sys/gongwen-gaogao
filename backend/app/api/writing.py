@@ -58,6 +58,9 @@ async def api_generate_content(
 ):
     """流式生成公文内容（SSE）"""
     async def event_stream():
+        # 立即发送连接确认，防止 Cloudflare Tunnel 超时断开
+        yield f"event: connected\ndata: {json.dumps({'status': 'started'})}\n\n"
+
         async for event in generate_content_stream(
             topic=req.topic,
             doc_type=req.doc_type,
