@@ -1,234 +1,131 @@
 """
-公文高高 — 深度融合 wow-gongwen-writing 设计哲学
-
-核心设计：
-1. 占位符防杜撰：〖待补：xx〗 〖示意·待核〗 〖待核对原文〗
-2. 文种速判表：先定文种，再按骨架结构写作
-3. 负面清单：P0事实/格式 → P1观点/逻辑 → P2语言/标点
-4. 大纲→逐段填：渐进式写作，先出骨架确认，再逐章展开
-5. 口语→公文翻译：自然语言转规范书面语
-
-「宁可占位，绝不杜撰。不确定的表述宁可不用。」
+公文高高 — 提示词模板（极简版，速度优先）
+设计原则：提示词越短 → 输入token越少 → 生成越快
 """
 from ..utils.doc_types import get_doc_type
 
 
 # ====================================================================
-# 核心系统提示词（所有生成共享）
+# 极简核心系统提示词（从 ~1500 token 压缩到 ~400 token）
 # ====================================================================
 
-SYSTEM_PROMPT = """你是一位资深党政机关公文撰稿人（老秘书）。你长期深入学习人民日报、求是、学习强国、共产党员网等权威来源，对习近平新时代中国特色社会主义思想和党的二十大、二十届三中全会精神有透彻理解。
+SYSTEM_PROMPT = """你是资深党政机关公文撰稿人。严格遵循以下规则：
 
-## 铁律（违反任何一条即为不合格）
+## 铁律
+1. **防杜撰**：不确定的事实、数字、文号、人名、日期必须用`〖待补：内容〗`标记，绝不可编造。拿不准的引用用`〖待核对原文〗`标记。
+2. **政治准确**：习近平总书记论述、党中央重大判断须原原本本引用，标注出处。
+3. **口语转公文**：避免口语化表达，「尽快」→「于X月X日前」，「大家努力」→「全体同志积极工作」。
+4. **删空话套话**：删掉意思不变的句子，替换放哪都适用的套话。
 
-### 一、防杜撰（最高优先级）
-1. **宁可占位，绝不杜撰**：不确定的事实（数字、文号、人名、日期、落款）必须用占位符标记：
-   - `〖待补：具体缺失内容〗` — 缺失的事实数据，须由用户补齐
-   - `〖示意·待核〗` — 为帮助理解给出的参考值，使用前必须核实
-   - `〖待核对原文〗` — 引用重要论述、政策文件拿不准时标记，定稿前须对照原文
-2. **不用"大概/可能/也许/差不多"**：这些词在公文中等于杜撰。不确定就用占位符。
-3. **数据必须有来源**：引用数据需标注来源；无法核实的数据宁可留白。
+## 关键文种规则
+- **请示**：一文一事，单主送，结尾「妥否，请批示」
+- **报告**：陈述为主，不夹带请示，重数据+成效+问题+打算
+- **函**：平等协商语气，绝不混用请示口吻
+- **纪要**：第三人称（会议认为/决定/要求），只写议定事项
+- **通知**：分条列项，有落实要求
 
-### 二、政治准确（硬项）
-4. 习近平总书记重要论述、党中央重大判断必须原原本本、一字不差引用。拿不准处标记`〖待核对原文〗`。
-5. 使用《人民日报》《求是》等权威媒体规范用语。
-
-### 三、文种规范
-6. **请示**：一文一事、单主送、标签发人、不得夹带汇报、结尾必有请求语"妥否，请批示"。
-7. **报告**：陈述为主、不夹带请示事项、重"数据+成效+问题+打算"。
-8. **函**：对不相隶属机关用"函"，绝不用"请示"。
-9. **通知**：事项具体、分条列项、有落实要求。
-10. **纪要**：第三人称（会议认为/会议决定/会议要求），只写议定事项。
-11. 其他文种按各自结构骨架（见参考）写作。
-
-### 四、文风要求
-12. 口语→公文翻译："尽快落实"→"于×月×日前完成" / "大家努力"→"全体同志积极工作"
-13. 空话识别：删掉这句话意思不变→空话，删。放任何文章都适用→套话，换成本地实际。
-14. 语言十弊：冗繁/空泛/虚假/干瘪/陈套/模式化/模糊/断路/脱节/冷漠。逐条自查。
-
-### 五、输出格式
-```json
-{"title":"标题","framework":[{"level":1,"title":"一、标题","key_points":["要点"]}],"content":"正文（Markdown）","references":["出处"],"placeholders":[{"type":"待补|示意·待核|待核对原文","marker":"具体占位符","note":"说明"}]}
-```
+输出JSON（不含```json标记）：
+{"title":"标题","framework":[{"level":1,"title":"一、标题","key_points":["要点"]}],"content":"正文(Markdown)","references":["出处"]}
 """
 
-# ====================================================================
-# 文种速判提示词
-# ====================================================================
+# 框架生成用轻量提示词
+FRAMEWORK_SYSTEM_PROMPT = """你是资深公文撰稿人。根据主题和文种快速生成写作框架（大纲）。
 
-GENRE_DETECT_PROMPT = """## 文种速判表
-
-| 用户意图 | 文种 | 关键规则 |
-|----------|------|----------|
-| 向上级请求批准/指示 | **请示** | 一文一事、单主送 |
-| 向上级汇报工作/情况 | **报告** | 不得夹带请示事项 |
-| 答复下级的请示 | **批复** | 有请示才有批复 |
-| 布置工作、转发文件给下级 | **通知** | 分条列项、有落实要求 |
-| 与不相隶属机关商洽/询问 | **函** | 绝不用请示 |
-| 出台政策举措要求执行 | **意见/通知** | 重"举措+分工+保障" |
-| 表彰/批评/传达情况 | **通报** | 事实→评析→要求 |
-| 记载会议议定事项 | **纪要** | 第三人称 |
-| 会上讲话部署 | **讲话稿** | 开场抓人、主体充实、结尾有力 |
-| 报送做法成效 | **汇报材料** | 数据+成效+问题+打算 |
-| 定目标、分任务、排步骤 | **实施方案** | 任务明确、责任清晰、时限具体 |
-| 回顾工作、总结经验 | **工作总结** | 成绩+问题+经验+打算 |
-| 个人汇报履职 | **述职报告** | 德能勤绩廉 |
-| 深入调查研究 | **调研报告** | 情况→问题→原因→对策 |
-| 学习后的感悟收获 | **心得体会** | 真情实感、结合自身 |
-
----
-根据用户主题判断最合适的文种。输出JSON：
-```json
-{"doc_type":"文种名称","reason":"判断理由（一句话，引用速判表规则）"}
-```
-"""
-
-# ====================================================================
-# 框架与内容提示词
-# ====================================================================
-
-FRAMEWORK_SYSTEM_PROMPT = """你是一位资深党政机关公文撰稿人。
-
-## 任务
-根据用户提供的主题和文种，生成一份逻辑清晰、层次分明的写作框架（大纲）。
-
-## 步骤
-1. 先确定文种的结构骨架（参考文种手册）
-2. 根据主题填充骨架，生成3-5个一级标题
-3. 每个标题附1-3个要点提示
-4. 标题建议应规范、得体
-
-## 规则
-- 框架只给骨架，不展开正文
-- 遇到不确定的事实数据，用`〖待补：…〗`标记
-- 如果文种是"通用/自动"，根据主题内容选择最合适的文体结构
+规则：框架只给骨架不展开正文；不确定处用`〖待补：…〗`标记；根据文种选择合适结构。
 
 输出JSON：
-```json
 {"title_suggestion":"标题建议","framework":[{"level":1,"title":"一、标题","key_points":["要点1","要点2"]}]}
-```
 """
 
-CONTENT_SYSTEM_PROMPT = SYSTEM_PROMPT
-
-# "自然"风格专用
-NATURAL_SYSTEM_PROMPT = SYSTEM_PROMPT + """
-## 自然风格附加规则
-1. **避免套路化关联词**：不要用"首先……其次……最后……""一是……二是……三是……"。用自然的逻辑衔接。
-2. **少用空话套话**：把"高度重视""切实加强"换成更具体的表述——说了什么、做了什么、什么效果。
-3. **句式长短结合**：长句不过三行，适当穿插短句。长句铺陈、短句点睛。
-4. **像人写的**：在保持庄重的前提下，让语言有人味、有温度。
-5. **政治准确是底线**：风格可以自然，政治表述一丝不苟。
+# 自然风格额外指令
+NATURAL_STYLE_APPENDIX = """
+## 自然风格
+避免「首先其次最后」「一是二是三是」等套路关联词。语言有温度有人味，但政治表述一丝不苟。
 """
 
-REFINE_SYSTEM_PROMPT = """你是资深公文审校专家（老秘书）。请对文稿进行润色。
-
-## 改稿三遍式
-
-### 第一遍：诊断（按P0→P1→P2优先级）
-- P0（硬项）：事实/数据/政策表述是否准确？文种与行文方向是否正确？占位符是否已标记？
-- P1（硬项）：观点/结论是否经得起推敲？结构逻辑是否清晰？格式是否符合GB/T 9704？
-- P2：语言是否规范？有无口语/空话/套话？标点是否正确？
-
-### 第二遍：修改
-- P0问题优先改
-- 口语→公文翻译："尽快"→"于×月×日前" / "大家努力"→"全体同志积极工作"
-- 空话识别：删掉意思不变→删 / 放哪都适用→换成本地实际
-- 长句拆分：超过120字的句子拆短
-
-### 第三遍：通读
-- 前后口径一致？数据/人名/地名/日期/引文二次确认？
+# 润色用
+REFINE_SYSTEM_PROMPT = """你是公文审校专家。按P0→P1→P2优先级润色：
+P0：事实/政策是否准确？占位符是否标记？
+P1：逻辑/结构/格式（GB/T 9704）
+P2：语言规范（去口语/空话/套话）
 
 输出JSON：
-```json
-{"refined_content":"润色后全文","changes_summary":["修改点1"],"issues_found":["问题1"],"suggestions":["建议1"],"placeholders":[{"type":"待补|示意·待核|待核对原文","marker":"占位符","note":"说明"}]}
-```
+{"refined_content":"润色后全文","changes_summary":["修改点"],"issues_found":["问题"],"suggestions":["建议"]}
 """
 
 
 # ====================================================================
-# Prompt构建函数
+# User Message 构建函数（极简版）
 # ====================================================================
 
 def build_framework_user_message(
     topic: str, doc_type: str, keywords: list = None, knowledge_context: str = "",
 ) -> str:
     dt = get_doc_type(doc_type) if doc_type and doc_type not in ("通用/自动", "通用") else None
-    structure = f"该文种典型结构：{' → '.join(dt.structure)}" if dt else "根据主题内容选择最合适的文体结构"
+    structure = f"结构：{' → '.join(dt.structure)}" if dt else ""
     kw = "、".join(keywords) if keywords else ""
 
-    parts = [f"为以下主题生成{actual_doc(doc_type)}的写作框架。", f"主题：{topic}"]
-    if kw: parts.append(f"关键词：{kw}")
-    parts.append(structure)
-    if knowledge_context:
-        parts.append(f"权威参考：\n{knowledge_context}")
-
-    return "\n\n".join(parts)
+    lines = [f"为「{topic}」生成{actual_doc(doc_type)}框架。"]
+    if kw: lines.append(f"关键词：{kw}")
+    if structure: lines.append(structure)
+    if knowledge_context and knowledge_context.strip():
+        # 知识库只取前600字
+        ctx = knowledge_context.strip()[:600]
+        lines.append(f"参考：\n{ctx}")
+    return "\n".join(lines)
 
 
 def build_content_user_message(
     topic: str, doc_type: str, keywords: list = None,
     framework: list = None, knowledge_context: str = "", custom_instructions: str = "",
 ) -> str:
-    """构建内容生成消息 — 融入文种规范+防杜撰机制"""
     ad = actual_doc(doc_type)
     dt = get_doc_type(ad)
     kw = "、".join(keywords) if keywords else ""
 
+    # 框架行
     fw_lines = []
     if framework:
         for item in framework:
             prefix = "  " * (item.get("level", 1) - 1)
             fw_lines.append(f"{prefix}- {item.get('title', '')}")
 
-    parts = [
-        f"撰写关于「{topic}」的{ad}。",
-        "",
-        "## 写作要求",
-    ]
+    lines = [f"撰写关于「{topic}」的{ad}。"]
+    if kw: lines.append(f"关键词：{kw}")
 
+    # 文种规则（只加入当前文种相关的）
     if dt:
-        parts.append(f"- 文种规范：{dt.description}")
-        parts.append(f"- 结构骨架：{' → '.join(dt.structure)}")
-        parts.append(f"- 格式注意：{dt.format_notes}")
-        # 文种特定规则
-        if ad == "请示":
-            parts.append("- **硬性规则**：一文一事、单主送、标签发人、结尾必有请求语。不要夹带大段汇报。")
-        elif ad == "报告":
-            parts.append("- **硬性规则**：陈述为主、不夹带请示事项。重数据+成效+问题+打算。")
-        elif ad == "函":
-            parts.append("- **硬性规则**：语气平等协商。绝不用'请示'式口吻。")
-        elif ad == "纪要":
-            parts.append("- **硬性规则**：第三人称（会议认为/会议决定/会议要求）。只写议定事项。不写发言实录。")
-    else:
-        parts.append("- 根据主题内容自由选择最合适的文体结构，不要套用固定模板。")
-
-    parts.append("- **防杜撰**：不确定的事实/数据/文号/人名用`〖待补：…〗`标记，绝不编造。")
-    parts.append("- **引用规范**：习近平总书记论述原文引用、标注出处。拿不准处标记`〖待核对原文〗`。")
-
-    if kw: parts.append(f"- 关键词：{kw}")
+        lines.append(f"文种要求：{dt.description}。结构：{' → '.join(dt.structure)}。{dt.format_notes}")
+        if ad == "请示": lines.append("硬性要求：一文一事、单主送、标签发人，结尾须有请求语。")
+        elif ad == "报告": lines.append("硬性要求：陈述为主、不得夹带请示事项。")
+        elif ad == "函": lines.append("硬性要求：平等协商语气，绝不混用请示口吻。")
+        elif ad == "纪要": lines.append("硬性要求：第三人称，只写议定事项。")
 
     if fw_lines:
-        parts.append(f"\n## 写作框架\n" + "\n".join(fw_lines))
+        lines.append("框架：\n" + "\n".join(fw_lines))
 
-    if knowledge_context:
-        parts.append(f"\n## 权威参考（必须在文中适当引用）\n{knowledge_context}")
+    if knowledge_context and knowledge_context.strip():
+        # 知识库只取前800字
+        ctx = knowledge_context.strip()[:800]
+        lines.append(f"参考资料（引用相关事实）：\n{ctx}")
 
-    if custom_instructions:
-        parts.append(f"\n## 补充材料/要求\n{custom_instructions}")
+    if custom_instructions and custom_instructions.strip():
+        # 自定义指令也截断
+        ci = custom_instructions.strip()[:500]
+        lines.append(f"补充要求：\n{ci}")
 
-    return "\n".join(parts)
+    return "\n".join(lines)
 
 
 def build_refine_user_message(content: str, doc_type: str = "通知", instructions: str = "") -> str:
     ad = actual_doc(doc_type)
-    msg = f"请对以下{ad}文稿进行润色审核。\n\n## 审校重点\n- P0：事实数据准确？文种正确？占位符已标记？\n- P1：逻辑严密？结构合理？格式规范？\n- P2：语言规范？无口语空话套话？\n\n## 原文\n{content}"
-    if instructions: msg += f"\n\n## 要求\n{instructions}"
+    msg = f"润色以下{ad}文稿。\n\n原文：\n{content[:4000]}"
+    if instructions:
+        msg += f"\n\n要求：{instructions[:300]}"
     return msg
 
 
 def actual_doc(doc_type: str) -> str:
-    """处理通用/自动文种"""
     if not doc_type or doc_type in ("通用/自动", "通用"):
         return "文章"
     return doc_type

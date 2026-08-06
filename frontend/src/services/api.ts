@@ -201,8 +201,9 @@ export function generateContentStream(
             const data = line.slice(6)
             try {
               const parsed = JSON.parse(data)
-              if (eventType === 'connected') { /* 连接确认，清除超时 */ clearTimeout(timeoutId) }
-              else if (eventType === 'content_delta') onDelta(parsed.text || '')
+              if (eventType === 'connected') { clearTimeout(timeoutId) }
+              else if (eventType === 'status' || eventType === 'progress') { /* 进度事件，不清除超时 */ }
+              else if (eventType === 'content_delta') { clearTimeout(timeoutId); onDelta(parsed.text || '') }
               else if (eventType === 'complete') { clearTimeout(timeoutId); onComplete(parsed as GenerationComplete) }
               else if (eventType === 'error') { clearTimeout(timeoutId); onError(parsed.error || '生成错误') }
             } catch { /* ignore */ }
