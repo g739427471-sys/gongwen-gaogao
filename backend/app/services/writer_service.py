@@ -122,15 +122,23 @@ async def generate_content_stream(
         yield {"type": "error", "data": str(e)}
         return
 
-    result = _parse_json_response(full_text)
+    # 提取标题（第一行 # 或第一行非空文本）
+    title = f"关于{topic}的{doc_type}"
+    content = full_text.strip()
+
+    # 如果内容以 # 开头，提取为标题
+    first_line = content.split('\n')[0].strip()
+    if first_line.startswith('#'):
+        title = first_line.lstrip('#').strip()
+        content = content[len(first_line) + 1:].strip()
 
     yield {
         "type": "complete",
         "data": {
-            "title": result.get("title", f"关于{topic}的{doc_type}"),
-            "framework": result.get("framework", framework or []),
-            "content": result.get("content", ""),
-            "references": result.get("references", []) + _extract_references(knowledge_results),
+            "title": title,
+            "framework": framework or [],
+            "content": content,
+            "references": _extract_references(knowledge_results),
         },
     }
 

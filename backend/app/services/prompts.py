@@ -9,23 +9,23 @@ from ..utils.doc_types import get_doc_type
 # 极简核心系统提示词（从 ~1500 token 压缩到 ~400 token）
 # ====================================================================
 
-SYSTEM_PROMPT = """你是资深党政机关公文撰稿人。严格遵循以下规则：
+SYSTEM_PROMPT = """你是资深党政机关公文撰稿人。
 
-## 铁律
-1. **防杜撰**：不确定的事实、数字、文号、人名、日期必须用`〖待补：内容〗`标记，绝不可编造。拿不准的引用用`〖待核对原文〗`标记。
+## 写作铁律
+1. **防杜撰**：不确定的事实、数字、文号、人名、日期用`〖待补：内容〗`标记，绝不可编造。
 2. **政治准确**：习近平总书记论述、党中央重大判断须原原本本引用，标注出处。
-3. **口语转公文**：避免口语化表达，「尽快」→「于X月X日前」，「大家努力」→「全体同志积极工作」。
-4. **删空话套话**：删掉意思不变的句子，替换放哪都适用的套话。
+3. **去口语**：避免口语化表达，「尽快」→「于X月X日前」。
+4. **去空话**：删掉意思不变的句子，替换放哪都适用的套话。
 
 ## 关键文种规则
-- **请示**：一文一事，单主送，结尾「妥否，请批示」
-- **报告**：陈述为主，不夹带请示，重数据+成效+问题+打算
-- **函**：平等协商语气，绝不混用请示口吻
-- **纪要**：第三人称（会议认为/决定/要求），只写议定事项
-- **通知**：分条列项，有落实要求
+- 请示：一文一事，单主送，结尾「妥否，请批示」
+- 报告：陈述为主，不夹带请示，重数据+成效+问题+打算
+- 函：平等协商语气，绝不混用请示口吻
+- 纪要：第三人称（会议认为/决定/要求），只写议定事项
+- 通知：分条列项，有落实要求
 
-输出JSON（不含```json标记）：
-{"title":"标题","framework":[{"level":1,"title":"一、标题","key_points":["要点"]}],"content":"正文(Markdown)","references":["出处"]}
+## 输出要求
+你收到的是一个大纲框架。请基于大纲中每个章节的标题和要点，**展开成完整的段落内容**。每个章节写2-4个完整段落，包括理论阐述、具体做法、成效总结等。输出纯文本/Markdown格式的完整文稿，不要输出JSON。
 """
 
 # 框架生成用轻量提示词
@@ -86,34 +86,38 @@ def build_content_user_message(
     # 框架行
     fw_lines = []
     if framework:
-        for item in framework:
+        for i, item in enumerate(framework):
             prefix = "  " * (item.get("level", 1) - 1)
             fw_lines.append(f"{prefix}- {item.get('title', '')}")
+            kps = item.get('key_points', [])
+            if kps:
+                fw_lines.append(f"{prefix}  （要点：{'；'.join(kps)}）")
 
-    lines = [f"撰写关于「{topic}」的{ad}。"]
+    lines = [
+        f"请撰写一篇完整的{ad}。主题：「{topic}」。",
+        "",
+        "**重要：请逐章展开完整段落。每个章节写2-4个自然段，每段3-5句话。**",
+        "**内容要有实质信息：理论依据、具体做法、实际成效、数据支撑。**",
+        "**『××』是占位符标记，你必须用合理的内容替换它们，不要照搬。**",
+        "",
+    ]
     if kw: lines.append(f"关键词：{kw}")
 
-    # 文种规则（只加入当前文种相关的）
     if dt:
-        lines.append(f"文种要求：{dt.description}。结构：{' → '.join(dt.structure)}。{dt.format_notes}")
-        if ad == "请示": lines.append("硬性要求：一文一事、单主送、标签发人，结尾须有请求语。")
-        elif ad == "报告": lines.append("硬性要求：陈述为主、不得夹带请示事项。")
-        elif ad == "函": lines.append("硬性要求：平等协商语气，绝不混用请示口吻。")
-        elif ad == "纪要": lines.append("硬性要求：第三人称，只写议定事项。")
+        lines.append(f"{ad}要求：{dt.description}。结构：{' → '.join(dt.structure)}。{dt.format_notes}")
 
     if fw_lines:
-        lines.append("框架：\n" + "\n".join(fw_lines))
+        lines.append("大纲框架：\n" + "\n".join(fw_lines))
 
     if knowledge_context and knowledge_context.strip():
-        # 知识库只取前800字
         ctx = knowledge_context.strip()[:800]
-        lines.append(f"参考资料（引用相关事实）：\n{ctx}")
+        lines.append(f"参考资料：\n{ctx}")
 
     if custom_instructions and custom_instructions.strip():
-        # 自定义指令也截断
         ci = custom_instructions.strip()[:500]
-        lines.append(f"补充要求：\n{ci}")
+        lines.append(f"补充要求：{ci}")
 
+    lines.append("\n请直接输出完整文稿正文（含标题），不要输出JSON格式。")
     return "\n".join(lines)
 
 
