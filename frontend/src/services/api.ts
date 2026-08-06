@@ -70,7 +70,16 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(`${API_BASE}${url}`, { headers, ...options })
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${url}`, { headers, ...options })
+  } catch (err: any) {
+    // 网络错误（CORS、DNS、连接失败等）
+    if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+      throw new Error('无法连接服务器，请检查网络或稍后重试')
+    }
+    throw err
+  }
 
   if (!res.ok) {
     if (res.status === 401) {
@@ -159,13 +168,13 @@ export function generateContentStream(
         return
       }
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: '请求失败' }))
-        onError(err.detail || `HTTP ${response.status}`)
+        const err = await response.json().catch(() => ({ detail: `服务器错误 (${response.status})` }))
+        onError(err.detail || `请求失败 (${response.status})`)
         return
       }
 
       const reader = response.body?.getReader()
-      if (!reader) { onError('无法读取响应流'); return }
+      if (!reader) { onError('无法读取响应流，请重试'); return }
 
       const decoder = new TextDecoder()
       let buffer = ''
@@ -195,7 +204,12 @@ export function generateContentStream(
       }
     })
     .catch((err) => {
-      if (err.name !== 'AbortError') onError(err.message || '网络错误')
+      if (err.name === 'AbortError') return
+      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+        onError('无法连接服务器，请确认后端服务已启动并刷新页面重试')
+      } else {
+        onError(err.message || '网络错误，请重试')
+      }
     })
 
   return controller

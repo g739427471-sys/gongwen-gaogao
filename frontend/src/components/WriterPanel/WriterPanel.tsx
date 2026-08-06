@@ -3,6 +3,7 @@ import DocTypeSelector from './DocTypeSelector'
 import FrameworkView from './FrameworkView'
 import ContentView from './ContentView'
 import Dashboard from './Dashboard'
+import StatusBar from './StatusBar'
 import {
   generateFramework, generateContentStream, detectDocType, uploadReference,
   auditContent, exportWord,
@@ -58,6 +59,18 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
   const [editedContent, setEditedContent] = useState('')
   const [showGuide, setShowGuide] = useState(false)
   const [learnMsg, setLearnMsg] = useState('')
+  const [customWords, setCustomWords] = useState(0)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+
+  // 恢复自动保存内容
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('gongwen_autosave') || 'null')
+      if (saved && saved.content && !topic && !content) {
+        setTopic(saved.content.slice(0, 100).replace(/\n/g, ' '))
+      }
+    } catch {}
+  }, [])
   const [auditing, setAuditing] = useState(false)
   const [auditResult, setAuditResult] = useState<any>(null)
   const [exporting, setExporting] = useState(false)
@@ -160,7 +173,7 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
   // ====== Step 1: Framework Only ======
   const handleGenerateFramework = useCallback(async () => {
     if (!topic.trim()) { setError('请输入写作主题。'); return }
-    setError(''); setContent(''); setIsGenerating(true); setGenerateStep('framework'); setProgressStep(0)
+    setError(''); setContent(''); setIsGenerating(true); setGenerateStep('framework'); setProgressStep(0); setStartedAt(Date.now())
     triggerAutoSearch(topic.trim())
     const kwList = keywords.split(/[,，、\s]+/).filter(Boolean)
     try { const fw = await generateFramework(topic.trim(), docType, kwList); setFramework(fw.framework); setTitleSuggestion(fw.title_suggestion); setProgressStep(2); setIsGenerating(false); setGenerateStep('awaiting_confirm') }
@@ -183,59 +196,44 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Input Area */}
-      <div className="p-4 border-b border-gray-200 bg-white">
-        {/* Flavor bar */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Sliders size={13} className="text-gray-400" />
-            <span className="text-xs text-gray-500">AI风格：</span>
-            <div className="flex gap-1">
-              {FLAVOR_OPTIONS.map(opt => (
-                <button key={opt.value}
-                  onClick={() => setFlavor(opt.value)}
-                  className={`px-2.5 py-1 rounded-full text-xs transition ${
-                    flavor === opt.value ? 'bg-[#c8102e] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                  }`}
-                  title={opt.desc}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <span className="text-[10px] text-gray-400 ml-1 hidden sm:inline">
-              {FLAVOR_OPTIONS.find(o => o.value === flavor)?.desc}
-            </span>
-          </div>
-          <button onClick={() => setShowOptions(!showOptions)}
-            className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
-            高级选项 {showOptions ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </button>
-        </div>
-
-        {/* Core input row: 文种 + 主题 + 字数 */}
-        <div className="flex items-stretch gap-2">
-          <div className="shrink-0">
-            <DocTypeSelector value={docType} onChange={setDocType} disabled={isGenerating} />
-          </div>
+      <div className="p-4 border-b border-gray-200 bg-white space-y-3">
+        {/* 1. Core input row: 文种 + 主题 + 字数 */}
+        <div className="flex items-stretch gap-2 flex-wrap md:flex-nowrap">
+          <DocTypeSelector value={docType} onChange={setDocType} disabled={isGenerating} />
           <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
             placeholder="输入写作主题，如：2026年上半年党建工作总结"
-            className="flex-1 h-12 px-4 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 focus:border-[#c8102e] placeholder-gray-400"
+            className="flex-1 h-10 px-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 focus:border-[#c8102e] placeholder-gray-400 min-w-0"
             disabled={isGenerating} />
           <div className="flex items-center gap-1 shrink-0">
             {[300, 800, 2000].map(n => (
-              <button key={n} onClick={() => setKeywords(prev => prev.includes(`约${n}字`) ? prev.replace(`约${n}字`, '').trim() : `约${n}字`)}
-                className={`px-2 py-1 rounded text-[10px] border transition ${
-                  keywords.includes(`约${n}字`) ? 'border-[#c8102e] bg-[#c8102e]/5 text-[#c8102e]' : 'border-gray-200 text-gray-400 hover:border-gray-300'
-                }`}
-                title="设定字数要求">{n}字</button>
+              <button key={n} onClick={() => { setCustomWords(customWords === n ? 0 : n) }}
+                className={`px-2 py-1 rounded text-[10px] border transition whitespace-nowrap ${
+                  customWords === n ? 'border-[#c8102e] bg-[#c8102e]/5 text-[#c8102e] font-medium' : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                }`}>{n}字</button>
             ))}
+            <button onClick={() => { const v = prompt('请输入目标字数（如1500）：'); if(v){ const n=parseInt(v); if(n>0) setCustomWords(n) } }}
+              className="px-2 py-1 rounded text-[10px] border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition whitespace-nowrap"
+              title="自定义字数">
+              {customWords > 0 && ![300,800,2000].includes(customWords) ? `${customWords}字` : '自定义'}
+            </button>
           </div>
         </div>
-        {detectReason && <p className="text-xs text-green-600 mt-1">📋 {docType} — {detectReason}</p>}
+        {detectReason && <p className="text-xs text-green-600">📋 {docType} — {detectReason}</p>}
 
-        {/* AI风格 — 独立一行 */}
-        <div className="flex items-center justify-between mt-2">
+        {/* 2. 隐藏的高级选项 */}
+        {showOptions && (
+          <div className="animate-fade-in">
+            <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
+              placeholder="关键词（逗号分隔，如：党建, 组织建设）"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30"
+              disabled={isGenerating} />
+          </div>
+        )}
+
+        {/* 3. AI风格 — 独立一行 */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-1.5">
+            <Sliders size={12} className="text-gray-400" />
             <span className="text-[10px] text-gray-400">AI风格：</span>
             {FLAVOR_OPTIONS.map(opt => (
               <button key={opt.value} onClick={() => setFlavor(opt.value)}
@@ -244,107 +242,78 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
                 }`}>{opt.label}</button>
             ))}
           </div>
-          <span className="text-[10px] text-gray-400">平衡规范与流畅度，日常使用推荐「标准」</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-gray-400">平衡规范与流畅度，日常使用推荐「标准」</span>
+            <button onClick={() => setShowOptions(!showOptions)}
+              className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
+              高级选项 {showOptions ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            </button>
+          </div>
         </div>
 
-        {/* 上传 + 生成按钮 */}
-        <div className="flex items-center gap-3 mt-2">
-          {/* Upload button */}
-          <label className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-300 rounded-lg text-xs text-gray-500 cursor-pointer hover:border-gray-400 transition">
+        {/* 4. 上传 + 生成按钮 */}
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+          <label className="flex items-center gap-1.5 px-3 h-10 border border-[#d0d0d0] rounded-md text-xs text-gray-500 cursor-pointer hover:bg-gray-50 transition shrink-0">
             <Upload size={13} /> 上传参考
             <input type="file" onChange={handleFileInput} multiple className="hidden"
               accept=".doc,.docx,.pdf,.txt,.md" disabled={isGenerating} />
           </label>
 
-          {/* File chips */}
           {files.map((f, i) => (
-            <span key={i} className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-[10px] text-gray-600">
+            <span key={i} className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-[10px] text-gray-600 shrink-0">
               {f.name.length > 12 ? f.name.slice(0,12)+'…' : f.name}
               <button onClick={() => setFiles(fs => fs.filter((_,j) => j !== i))}><X size={10}/></button>
             </span>
           ))}
 
-          <div className="flex-1" />
+          <div className="flex-1 hidden sm:block" />
 
-          {/* Generate button */}
           {isGenerating ? (
             <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
-              className="h-12 px-8 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition">
+              className="h-10 px-8 bg-gray-500 text-white rounded-md text-sm font-medium hover:bg-gray-600 transition w-full sm:w-auto">
               停止生成
             </button>
           ) : (
             <button onClick={handleGenerateFramework}
-              className="h-12 px-8 bg-[#c8102e] text-white rounded-lg text-sm font-bold hover:bg-[#a00d25] active:scale-95 transition-all flex items-center gap-2 shadow-md shadow-[#c8102e]/20">
-              <Sparkles size={18} /> 生成公文
+              className="h-10 w-[120px] bg-[#c8102e] text-white rounded-md text-sm font-bold hover:bg-[#a00d22] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-md shadow-[#c8102e]/20 shrink-0 ml-auto sm:ml-0">
+              <Sparkles size={16} /> 生成公文
             </button>
           )}
         </div>
 
-        {/* Upload drop zone */}
+        {/* Drag-drop — 展开高级选项时显示 */}
         {showOptions && (
-          <div className="mt-2 pt-2 border-t border-gray-100 animate-fade-in">
-            <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
-              placeholder="关键词（逗号分隔，如：党建, 组织建设）"
-              className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#c8102e]/30 mb-2"
-              disabled={isGenerating} />
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-3 text-center transition ${
-                dragOver ? 'border-[#c8102e] bg-red-50' : 'border-gray-300'
-              }`}
-            >
-              <label className="cursor-pointer">
-                <Upload size={18} className="mx-auto text-gray-400 mb-1" />
-                <p className="text-xs text-gray-500">拖拽文件到此处，或<span className="text-[#c8102e]">点击上传</span></p>
-                <p className="text-[10px] text-gray-400">支持 Word / PDF / TXT / 图片，最多5份</p>
-                <input type="file" className="hidden" onChange={handleFileInput} multiple
-                  disabled={isGenerating || uploading}
-                  accept=".txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.doc,.docx" />
-              </label>
-              {uploading && <p className="text-xs text-gray-400 mt-1">上传中...</p>}
-            </div>
-            {/* File list */}
-            {files.length > 0 && (
-              <div className="space-y-1">
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1">
-                    <FileText size={12} className="text-blue-500" />
-                    <span className="flex-1 text-blue-700 truncate">{f.name}</span>
-                    <button onClick={() => setFiles(files.filter((_, j) => j !== i))}
-                      className="text-blue-400 hover:text-red-500"><X size={12} /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Compact mode: Generate + Upload */}
-        {!showOptions && (
-          <div className="flex items-center justify-end gap-2 mt-3">
-            <label className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded text-xs cursor-pointer hover:bg-gray-50 transition">
-              <Upload size={12} /> {uploading ? '上传中' : '上传参考'}
+          <div onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-lg p-3 text-center transition ${dragOver ? 'border-[#c8102e] bg-red-50' : 'border-gray-300'}`}>
+            <label className="cursor-pointer">
+              <Upload size={16} className="mx-auto text-gray-400 mb-1" />
+              <p className="text-[10px] text-gray-500">拖拽文件到此处，或<span className="text-[#c8102e]">点击上传</span></p>
+              <p className="text-[9px] text-gray-400">Word / PDF / TXT，最多5份</p>
               <input type="file" className="hidden" onChange={handleFileInput} multiple
-                disabled={isGenerating || uploading}
-                accept=".txt,.md,.png,.jpg,.jpeg,.pdf,.doc,.docx" />
+                disabled={isGenerating || uploading} accept=".txt,.md,.pdf,.doc,.docx" />
             </label>
-            {files.length > 0 && <span className="text-[10px] text-green-600">已上传 {files.length} 份</span>}
-            {isGenerating ? (
-              <button onClick={() => { abortRef.current?.abort(); setIsGenerating(false); setProgressStep(-1) }}
-                className="px-5 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600">停止</button>
-            ) : (
-              <button onClick={handleGenerateFramework}
-                className="px-5 py-2.5 bg-[#c8102e] text-white rounded-lg text-sm font-medium hover:bg-[#a00d25] transition flex items-center gap-2 shadow-sm">
-                <Sparkles size={16} /> 生成公文
-              </button>
-            )}
+            {uploading && <p className="text-xs text-gray-400 mt-1">上传中...</p>}
           </div>
         )}
 
         {error && (
-          <div className="mt-2 p-2.5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{error}</div>
+          <div className="mt-2 p-2.5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-center justify-between gap-2">
+            <span>{error}</span>
+            {(generateStep === 'awaiting_confirm' || generateStep === 'framework') && (
+              <button onClick={() => { setError(''); handleGenerateFramework() }}
+                className="shrink-0 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded text-xs font-medium transition">
+                重试
+              </button>
+            )}
+            {generateStep === 'content' && (
+              <button onClick={() => { setError(''); handleGenerateContent() }}
+                className="shrink-0 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded text-xs font-medium transition">
+                重试
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -354,16 +323,16 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
         {!isGenerating && !content && (
           <div className="mb-4 border border-amber-200 rounded-lg bg-amber-50 overflow-hidden">
             <button onClick={() => setShowGuide(!showGuide)}
-              className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors rounded-t-lg">
+              className="w-full px-3 py-1.5 flex items-center justify-between text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors">
               <span>📖 使用指引</span>
-              <span className="text-xs text-amber-500">{showGuide ? '[收起 ▲]' : '[展开 ▼]'}</span>
+              <span className="text-[10px] text-amber-500">{showGuide ? '[收起 ▲]' : '[展开 ▼]'}</span>
             </button>
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              showGuide ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+            <div className={`overflow-hidden transition-all duration-300 ${
+              showGuide ? 'max-h-32 opacity-100' : 'max-h-0 opacity-0'
             }`}>
-              <div className="px-4 pb-3 text-xs text-amber-700 space-y-1 leading-relaxed">
-                <p><strong>1.</strong> 输入主题或点击上方「快捷指令」→ <strong>2.</strong> 调节AI风格 → <strong>3.</strong> 可选上传参考文件 → <strong>4.</strong> 点击「生成公文」→ <strong>5.</strong> 编辑修改后导出</p>
-                <p className="text-amber-500 mt-1">提示：右侧面板会自动检索与您主题相关的权威资料。</p>
+              <div className="px-3 pb-2 text-[10px] text-amber-700 space-y-0.5 leading-relaxed">
+                <p>① 选择文种或点击快捷指令 ② 输入写作主题 ③ 调节AI风格 ④ 点击生成公文 ⑤ 审校后导出Word</p>
+                <p className="text-amber-500">提示：右侧知识库会随主题自动检索权威参考资料。</p>
               </div>
             </div>
           </div>
@@ -504,6 +473,9 @@ export default function WriterPanel({ quickTopic, quickDocType, onConsumed, onAu
           </div>
         )}
       </div>
+
+      <StatusBar content={content || editedContent} isGenerating={isGenerating} startedAt={startedAt} />
+
     </div>
   )
 }
